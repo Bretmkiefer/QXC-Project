@@ -202,6 +202,42 @@ def format_phone(raw) -> str:
     return str(raw).strip()
 
 
+# There's no structured SKU/model/quantity field anywhere in either source
+# file (checked directly against the raw CSV headers) - Kyle's scope doc
+# already flags identifying specific Cisco products/SKUs as something to
+# work out later, not data we're handed. This regex is a best-effort pull of
+# recognizable Cisco model numbers out of the free-text descriptions where
+# they happen to be spelled out - it catches ~1 in 14 description rows, not
+# a complete inventory, and doesn't attempt quantity at all (a similar
+# sweep for "QTY 5" / "5 X ..." patterns hit a lot of false positives and
+# covered under 2% of rows, too unreliable to present as real data).
+MODEL_PATTERN = re.compile(
+    r"\b("
+    r"(?:Catalyst|Nexus)\s?[0-9]{3,4}[A-Z0-9\-]*"
+    r"|C9[0-9]{3}[A-Z0-9\-]*"
+    r"|WS-C[0-9]{4}[A-Z0-9\-]*"
+    r"|N9K-[A-Z0-9\-]+"
+    r"|Firepower\s?[0-9]{3,4}[A-Z0-9\-]*"
+    r"|ASA\s?5[0-9]{3}[A-Z0-9\-]*"
+    r"|ISR\s?4[0-9]{3}[A-Z0-9\-]*"
+    r"|ASR\s?1[0-9]{3}[A-Z0-9\-]*"
+    r"|Meraki\s?[A-Z]{2}[0-9]{2,3}[A-Z0-9\-]*"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def extract_models(text) -> list:
+    if not text or (isinstance(text, float) and pd.isna(text)):
+        return []
+    seen = []
+    for m in MODEL_PATTERN.findall(str(text)):
+        norm = re.sub(r"\s+", " ", m).strip().upper()
+        if norm not in seen:
+            seen.append(norm)
+    return seen
+
+
 # ---------------------------------------------------- read/write storage --
 # The award/subaward data above is bundled read-only into the deploy (built
 # by db/build_db.py) and always read via sqlite3, everywhere. But viewed
@@ -396,6 +432,8 @@ def build_records() -> pd.DataFrame:
     records["office_url_awarding"] = records["awarding_office_code"].astype(str).apply(encode_key)
     records["office_url_funding"] = records["funding_office_code"].astype(str).apply(encode_key)
     records["company_url"] = records["company_key"].apply(encode_key)
+    records["models"] = records["description"].apply(extract_models)
+    records["models_str"] = records["models"].apply(lambda m: ", ".join(m))
     return records
 
 
@@ -695,12 +733,14 @@ def build_record_detail(record_type: str, record_id: str):
             },
         ]
 
+        description = a["transaction_description"] or a["base_transaction_description"]
         return {
             "record_type": "award",
             "record_id": record_id,
             "type_label": "Direct Award",
             "title": a["award_id_piid"],
-            "description": a["transaction_description"] or a["base_transaction_description"],
+            "description": description,
+            "models": extract_models(description),
             "amount": a["total_federal_action_obligation"],
             "amount_label": "Total Obligated",
             "company_name": a["recipient_name"],
@@ -775,12 +815,14 @@ def build_record_detail(record_type: str, record_id: str):
             },
         ]
 
+        description = s["subaward_description"] or s["prime_award_description"]
         return {
             "record_type": "subaward",
             "record_id": record_id,
             "type_label": "Subaward",
             "title": s["subaward_number"] or record_id,
-            "description": s["subaward_description"] or s["prime_award_description"],
+            "description": description,
+            "models": extract_models(description),
             "amount": s["subaward_amount"],
             "amount_label": "Subaward Amount",
             "company_name": s["subawardee_name"],

@@ -129,7 +129,7 @@
                     <div class="secondary">{{ item.award.awarding_agency_name|agency }}</div>
                   </td>
                   <td>{{ item.award.funding_office_name }}</td>
-                  <td><a href="{{ record_url('award', item.award.award_id_piid) }}" onclick="event.stopPropagation()">{{ item.award.award_id_piid }}</a></td>
+                  <td><a class="award-id-link" href="{{ record_url('award', item.award.award_id_piid) }}" onclick="event.stopPropagation()">{{ item.award.award_id_piid }}</a></td>
                   <td class="desc-text">{{ item.award.transaction_description or item.award.base_transaction_description or "—" }}</td>
                   <td class="record-row-date">{{ item.award.period_of_performance_start_date or "—" }}</td>
                   <td class="num">{{ item.award.total_federal_action_obligation|money }}</td>
@@ -163,7 +163,7 @@
                 {% for item in selected.sub_rows %}
                 <tr class="clickable" onclick="window.location='{{ url_for('offices_view', role='awarding', code_token=item.office_url_awarding) }}'">
                   <td class="name-cell"><div class="primary">{{ item.sub.prime_awardee_name }}</div></td>
-                  <td><a href="{{ record_url('subaward', item.sub.subaward_id) }}" onclick="event.stopPropagation()">{{ item.sub.subaward_number or item.sub.subaward_id }}</a></td>
+                  <td><a class="award-id-link" href="{{ record_url('subaward', item.sub.subaward_id) }}" onclick="event.stopPropagation()">{{ item.sub.subaward_number or item.sub.subaward_id }}</a></td>
                   <td>
                     <div class="primary" style="font-weight:500;">{{ item.sub.awarding_office_name }}</div>
                     <div class="secondary">{{ item.sub.awarding_agency_name|agency }}</div>

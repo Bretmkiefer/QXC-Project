@@ -703,7 +703,10 @@ details.subgroup table { border: 1px solid var(--border); border-radius: 8px; ov
   border-radius: var(--radius);
   padding: 12px 16px;
   box-shadow: var(--shadow);
+  transition: box-shadow 120ms ease, border-color 120ms ease;
 }
+.record-row.clickable { cursor: pointer; }
+.record-row.clickable:hover { border-color: var(--accent-2); box-shadow: var(--shadow-md); }
 .record-row.is-viewed { opacity: 0.72; }
 
 .record-row-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
@@ -721,6 +724,15 @@ details.subgroup table { border: 1px solid var(--border); border-radius: 8px; ov
 }
 .record-row-id:hover { background: var(--accent-soft); color: var(--accent); }
 .record-row-amount { margin-left: auto; font-family: var(--font-mono); font-weight: 650; font-size: 13px; color: var(--text); white-space: nowrap; }
+
+.award-id-link {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--accent);
+  cursor: pointer;
+}
+.award-id-link:hover { text-decoration: underline; }
 
 .record-row-office { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
 .record-row-office a { cursor: pointer; }
@@ -773,6 +785,21 @@ details.subgroup table { border: 1px solid var(--border); border-radius: 8px; ov
   padding: 14px 16px;
   margin: 12px 0 20px;
   max-width: 900px;
+}
+.models-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 900px;
+  margin: 0 0 20px;
+}
+.models-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  font-weight: 650;
 }
 .related-banner {
   display: flex;

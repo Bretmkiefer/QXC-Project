@@ -36,6 +36,12 @@
   </div>
 
   {% if r.description %}<div class="record-detail-desc">{{ r.description }}</div>{% endif %}
+  {% if r.models %}
+  <div class="models-row">
+    <span class="models-label">Cisco Models Mentioned:</span>
+    {% for m in r.models %}<span class="badge badge-accent">{{ m }}</span>{% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 {% if r.related %}

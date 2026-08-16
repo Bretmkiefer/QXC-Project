@@ -133,7 +133,7 @@
                     <div class="primary">{{ item.award.recipient_name }}</div>
                     <div class="secondary">{{ item.award.recipient_state_code }}</div>
                   </td>
-                  <td><a href="{{ record_url('award', item.award.award_id_piid) }}" onclick="event.stopPropagation()">{{ item.award.award_id_piid }}</a></td>
+                  <td><a class="award-id-link" href="{{ record_url('award', item.award.award_id_piid) }}" onclick="event.stopPropagation()">{{ item.award.award_id_piid }}</a></td>
                   <td class="desc-text">{{ item.award.transaction_description or item.award.base_transaction_description or "—" }}</td>
                   <td class="record-row-date">{{ item.award.recipient_phone_number|phone or "—" }}</td>
                   <td class="record-row-date">{{ item.award.period_of_performance_start_date or "—" }}</td>
@@ -150,7 +150,7 @@
                           <thead><tr><th>Subaward #</th><th>Subawardee</th><th class="th-desc">Description</th><th>Service Start</th><th class="num">Amount</th></tr></thead>
                           <tbody>
                             {% for s in item.subawardees %}
-                            <tr><td><a href="{{ record_url('subaward', s.subaward_id) }}">{{ s.subaward_number or s.subaward_id }}</a></td><td>{{ s.subawardee_name }}</td><td class="desc-text">{{ s.subaward_description or "—" }}</td><td class="record-row-date">{{ s.period_of_performance_start_date or "—" }}</td><td class="num">{{ s.subaward_amount|money }}</td></tr>
+                            <tr><td><a class="award-id-link" href="{{ record_url('subaward', s.subaward_id) }}">{{ s.subaward_number or s.subaward_id }}</a></td><td>{{ s.subawardee_name }}</td><td class="desc-text">{{ s.subaward_description or "—" }}</td><td class="record-row-date">{{ s.period_of_performance_start_date or "—" }}</td><td class="num">{{ s.subaward_amount|money }}</td></tr>
                             {% endfor %}
                           </tbody>
                         </table>
@@ -182,7 +182,7 @@
                   {% for s in p.subawardees %}
                   <tr>
                     {% if loop.first %}<td rowspan="{{ p.subawardees|length }}" class="name-cell"><div class="primary">{{ p.prime_name }}</div></td>{% endif %}
-                    <td><a href="{{ record_url('subaward', s.subaward_id) }}">{{ s.subaward_number or s.subaward_id }}</a></td>
+                    <td><a class="award-id-link" href="{{ record_url('subaward', s.subaward_id) }}">{{ s.subaward_number or s.subaward_id }}</a></td>
                     <td>{{ s.subawardee_name }}</td>
                     <td class="desc-text">{{ s.subaward_description or "—" }}</td>
                     <td class="record-row-date">{{ s.period_of_performance_start_date or "—" }}</td>

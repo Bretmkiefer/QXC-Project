@@ -58,7 +58,8 @@
 
 <div class="record-list" id="records-list">
   {% for r in records %}
-  <div class="record-row {% if r.is_viewed %}is-viewed{% endif %}"
+  <div class="record-row clickable {% if r.is_viewed %}is-viewed{% endif %}"
+       onclick="window.location='{{ record_url(r.record_type, r.record_id) }}'"
        data-agency="{{ r[role ~ '_agency_name'] or '' }}"
        data-department="{{ r[role ~ '_sub_agency_name'] or '' }}"
        data-company="{{ (r.company_name or '')|lower }}"
@@ -67,16 +68,21 @@
     <div class="record-row-main">
       <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ 'Direct Award' if r.record_type == 'award' else 'Subaward' }}</span>
       <a class="record-row-id" href="{{ record_url(r.record_type, r.record_id) }}">{{ r.display_id }}</a>
-      <a class="record-row-company" href="{{ url_for('awardees_view', key_token=r.company_url) }}">{{ r.company_name or "(unknown)" }}</a>
+      <a class="record-row-company" href="{{ url_for('awardees_view', key_token=r.company_url) }}" onclick="event.stopPropagation()">{{ r.company_name or "(unknown)" }}</a>
       {% if r.record_type == 'subaward' and r.prime_name %}<span class="record-row-prime">for {{ r.prime_name }}</span>{% endif %}
       <span class="record-row-amount">{{ r.amount|money }}</span>
     </div>
     <div class="record-row-office">
-      <a href="{{ url_for('offices_view', role=role, code_token=r['office_url_' ~ role]) }}">{{ r[role ~ '_office_name'] }}</a>
+      <a href="{{ url_for('offices_view', role=role, code_token=r['office_url_' ~ role]) }}" onclick="event.stopPropagation()">{{ r[role ~ '_office_name'] }}</a>
       &middot; {{ r[role ~ '_agency_name']|agency }}
       {% if r[role ~ '_sub_agency_name'] and r[role ~ '_sub_agency_name'] != r[role ~ '_agency_name'] %} &middot; {{ r[role ~ '_sub_agency_name'] }}{% endif %}
     </div>
     {% if r.description %}<div class="record-row-desc">{{ r.description }}</div>{% endif %}
+    {% if r.models %}
+    <div class="models-row" style="margin:0 0 10px;">
+      {% for m in r.models %}<span class="badge badge-accent">{{ m }}</span>{% endfor %}
+    </div>
+    {% endif %}
     <div class="record-row-footer">
       <span class="record-row-meta">
         <span class="record-row-date">Action: {{ r.action_date or "—" }}</span>
