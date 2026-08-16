@@ -12,6 +12,8 @@ so browsing feels like one continuous screen rather than list -> detail page
 jumps.
 """
 import base64
+import json
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -200,7 +202,31 @@ def format_phone(raw) -> str:
     return str(raw).strip()
 
 
+# ---------------------------------------------------- read/write storage --
+# The award/subaward data above is bundled read-only into the deploy (built
+# by db/build_db.py) and always read via sqlite3, everywhere. But viewed
+# status and notes are written at runtime by users, and Cloud Run gives an
+# instance no durable local disk between requests - so on Cloud Run those two
+# go to Firestore instead. Locally (no K_SERVICE env var, which only Cloud
+# Run sets) they keep using db/qxc.db exactly as before, so `python
+# app/app.py` needs no GCP credentials and behaves unchanged.
+USE_FIRESTORE = bool(os.environ.get("K_SERVICE"))
+
+if USE_FIRESTORE:
+    from google.cloud import firestore
+
+    _fs_client = firestore.Client()
+
+
+def _fs_timestamp(value) -> str:
+    if value is None:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def ensure_viewed_table():
+    if USE_FIRESTORE:
+        return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -215,12 +241,22 @@ def ensure_viewed_table():
 
 
 def get_viewed_set() -> set:
+    if USE_FIRESTORE:
+        docs = _fs_client.collection("viewed_records").stream()
+        return {(d.get("record_type"), d.get("record_id")) for d in (doc.to_dict() for doc in docs)}
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute("SELECT record_type, record_id FROM viewed_records")
         return set(cur.fetchall())
 
 
 def set_viewed(record_type: str, record_id: str, viewed: bool):
+    if USE_FIRESTORE:
+        ref = _fs_client.collection("viewed_records").document(f"{record_type}_{record_id}")
+        if viewed:
+            ref.set({"record_type": record_type, "record_id": record_id, "viewed_at": firestore.SERVER_TIMESTAMP})
+        else:
+            ref.delete()
+        return
     with sqlite3.connect(DB_PATH) as conn:
         if viewed:
             conn.execute(
@@ -240,6 +276,8 @@ ensure_viewed_table()
 
 
 def ensure_notes_table():
+    if USE_FIRESTORE:
+        return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
@@ -256,6 +294,21 @@ def ensure_notes_table():
 
 
 def get_notes(record_type: str, record_id: str) -> list:
+    if USE_FIRESTORE:
+        # Two equality filters with no order_by needs no composite index;
+        # sort client-side instead of adding .order_by() in the query.
+        docs = (
+            _fs_client.collection("notes")
+            .where("record_type", "==", record_type)
+            .where("record_id", "==", record_id)
+            .stream()
+        )
+        notes = [
+            {"id": doc.id, "note_text": d.get("note_text", ""), "created_at": _fs_timestamp(d.get("created_at"))}
+            for doc, d in ((doc, doc.to_dict()) for doc in docs)
+        ]
+        notes.sort(key=lambda n: n["created_at"], reverse=True)
+        return notes
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.execute(
@@ -265,15 +318,19 @@ def get_notes(record_type: str, record_id: str) -> list:
         return [dict(row) for row in cur.fetchall()]
 
 
-def get_note_counts() -> dict:
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute("SELECT record_type, record_id, COUNT(*) FROM notes GROUP BY record_type, record_id")
-        return {(rt, rid): c for rt, rid, c in cur.fetchall()}
-
-
 def add_note(record_type: str, record_id: str, text: str):
     text = (text or "").strip()
     if not text:
+        return
+    if USE_FIRESTORE:
+        _fs_client.collection("notes").add(
+            {
+                "record_type": record_type,
+                "record_id": record_id,
+                "note_text": text,
+                "created_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
         return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -283,9 +340,12 @@ def add_note(record_type: str, record_id: str, text: str):
         conn.commit()
 
 
-def delete_note(note_id: int):
+def delete_note(note_id):
+    if USE_FIRESTORE:
+        _fs_client.collection("notes").document(str(note_id)).delete()
+        return
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        conn.execute("DELETE FROM notes WHERE id = ?", (int(note_id),))
         conn.commit()
 
 
@@ -366,11 +426,29 @@ def record_url(record_type: str, record_id) -> str:
     return url_for("record_detail_view", record_type=record_type, token=encode_key(str(record_id)))
 
 
+def _compute_asset_version() -> str:
+    """Content hash of the static JS/CSS, appended to their URLs as a cache
+    buster. Firebase Hosting/CDN and browsers otherwise keep serving a
+    stale cached app.js/style.css across deploys since the filename never
+    changes - this forces a fresh fetch whenever the content actually does."""
+    import hashlib
+
+    h = hashlib.md5()
+    for name in ("app.js", "style.css"):
+        path = ROOT / "app" / "static" / name
+        if path.exists():
+            h.update(path.read_bytes())
+    return h.hexdigest()[:10]
+
+
+ASSET_VERSION = _compute_asset_version()
+
 app.jinja_env.filters["money"] = money
 app.jinja_env.filters["agency"] = agency_display
 app.jinja_env.filters["phone"] = format_phone
 app.jinja_env.globals["avatar"] = avatar
 app.jinja_env.globals["record_url"] = record_url
+app.jinja_env.globals["asset_version"] = ASSET_VERSION
 
 
 # ---------------------------------------------------------------- agencies --
@@ -464,6 +542,21 @@ def department_options(role: str, agency: str = None):
         df = df[df[agency_c] == agency]
     vals = sorted(v for v in df[sub_agency_c].dropna().unique() if v)
     return vals
+
+
+def department_map(role: str) -> dict:
+    """agency name -> sorted list of its departments, for the client-side
+    cascading filter on pages (like the home page) that don't otherwise
+    have per-department rows in the DOM to derive this from."""
+    agency_c = f"{role}_agency_name"
+    sub_agency_c = f"{role}_sub_agency_name"
+    df = RECORDS[[agency_c, sub_agency_c]].dropna().drop_duplicates()
+    out = {}
+    for agency, group in df.groupby(agency_c):
+        depts = sorted(v for v in group[sub_agency_c].unique() if v)
+        if depts:
+            out[agency] = depts
+    return out
 
 
 def build_department_detail(role: str, agency: str, department: str):
@@ -884,6 +977,7 @@ def index():
         sort_options=AGENCY_SORTS,
         agency_names=agency_names,
         dept_names=department_options(role, jump_agency),
+        dept_map_json=json.dumps(department_map(role)),
         jump_agency=jump_agency,
         jump_department=jump_department,
         active="home",
@@ -904,7 +998,10 @@ def records_view():
     viewed = get_viewed_set()
 
     total_matches = len(df)
-    LIMIT = 250
+    # The static-site freezer passes limit=all so every record is embedded
+    # in the frozen page for the client-side filter script to work with;
+    # the live app always uses the normal cap.
+    LIMIT = total_matches if request.args.get("limit") == "all" else 250
     df = df.head(LIMIT)
 
     records = df.to_dict("records")

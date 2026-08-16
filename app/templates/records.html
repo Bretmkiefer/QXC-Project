@@ -12,11 +12,11 @@
     {% endfor %}
   </div>
 
-  <form method="get" action="{{ url_for('records_view') }}" class="filter-bar">
+  <form method="get" action="{{ url_for('records_view') }}" class="filter-bar" id="filter-form">
     <input type="hidden" name="role" value="{{ role }}">
     <div class="filter-field">
       <label>Agency</label>
-      <select name="agency" onchange="this.form.submit()">
+      <select name="agency" id="agency-select" onchange="this.form.submit()">
         <option value="">All Agencies</option>
         {% for a in agency_names %}
         <option value="{{ a }}" {% if a == agency %}selected{% endif %}>{{ a|agency }}</option>
@@ -25,7 +25,7 @@
     </div>
     <div class="filter-field">
       <label>Department</label>
-      <select name="department" onchange="this.form.submit()">
+      <select name="department" id="department-select" onchange="this.form.submit()">
         <option value="">All Departments</option>
         {% for d in dept_names %}
         <option value="{{ d }}" {% if d == department %}selected{% endif %}>{{ d }}</option>
@@ -34,11 +34,11 @@
     </div>
     <div class="filter-field">
       <label>Company (prime or sub)</label>
-      <input type="text" name="company" value="{{ company_q or '' }}" placeholder="e.g. Iron Bow">
+      <input type="text" name="company" id="company-input" value="{{ company_q or '' }}" placeholder="e.g. Iron Bow">
     </div>
     <div class="filter-field grow">
       <label>Search</label>
-      <input type="text" name="q" value="{{ q or '' }}" placeholder="Search descriptions, companies, offices&hellip;">
+      <input type="text" name="q" id="q-input" value="{{ q or '' }}" placeholder="Search descriptions, companies, offices&hellip;">
     </div>
     <button type="submit" class="btn-primary">Search</button>
     {% if agency and department %}<a class="btn-reset" href="{{ department_url(role, agency, department) }}">View Department Summary &rarr;</a>{% endif %}
@@ -46,19 +46,24 @@
   </form>
 
   <div class="stat-row">
-    <div class="stat-tile"><div class="label">Matches</div><div class="value">{{ total_matches }}</div></div>
-    <div class="stat-tile"><div class="label">Shown</div><div class="value">{{ shown }}</div></div>
-    <div class="stat-tile"><div class="label">Reviewed (shown)</div><div class="value green">{{ viewed_in_results }}</div></div>
-    <div class="stat-tile"><div class="label">Unreviewed (shown)</div><div class="value amber">{{ shown - viewed_in_results }}</div></div>
+    <div class="stat-tile"><div class="label">Matches</div><div class="value" id="stat-matches">{{ total_matches }}</div></div>
+    <div class="stat-tile"><div class="label">Shown</div><div class="value" id="stat-shown">{{ shown }}</div></div>
+    <div class="stat-tile"><div class="label">Reviewed (shown)</div><div class="value green" id="stat-reviewed">{{ viewed_in_results }}</div></div>
+    <div class="stat-tile"><div class="label">Unreviewed (shown)</div><div class="value amber" id="stat-unreviewed">{{ shown - viewed_in_results }}</div></div>
   </div>
   {% if total_matches > shown %}
-  <p class="note-text">Showing the top {{ shown }} of {{ total_matches }} matches by dollar amount &mdash; narrow your filters to see the rest.</p>
+  <p class="note-text" id="cap-note">Showing the top {{ shown }} of {{ total_matches }} matches by dollar amount &mdash; narrow your filters to see the rest.</p>
   {% endif %}
 </div>
 
-<div class="record-list">
+<div class="record-list" id="records-list">
   {% for r in records %}
-  <div class="record-row {% if r.is_viewed %}is-viewed{% endif %}">
+  <div class="record-row {% if r.is_viewed %}is-viewed{% endif %}"
+       data-agency="{{ r[role ~ '_agency_name'] or '' }}"
+       data-department="{{ r[role ~ '_sub_agency_name'] or '' }}"
+       data-company="{{ (r.company_name or '')|lower }}"
+       data-prime="{{ (r.prime_name or '')|lower }}"
+       data-search="{{ ((r.description or '') ~ ' ' ~ (r.company_name or '') ~ ' ' ~ (r.prime_name or '') ~ ' ' ~ (r[role ~ '_office_name'] or '') ~ ' ' ~ (r[role ~ '_agency_name'] or ''))|lower }}">
     <div class="record-row-main">
       <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ 'Direct Award' if r.record_type == 'award' else 'Subaward' }}</span>
       <a class="record-row-id" href="{{ record_url(r.record_type, r.record_id) }}">{{ r.display_id }}</a>
