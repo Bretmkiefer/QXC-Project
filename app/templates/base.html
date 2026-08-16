@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}QXC{% endblock %} · QXC Equipment Intelligence</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-mark">QX</div>
+      <div>
+        <div class="brand-name">QXC Equipment Intelligence</div>
+        <div class="brand-sub">Checkpoint 1 &middot; local proof of concept</div>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <a class="topbar-link {% if active == 'home' %}active{% endif %}" href="{{ url_for('index') }}">Home</a>
+      <a class="topbar-link {% if active == 'records' %}active{% endif %}" href="{{ url_for('records_view') }}">Search Records</a>
+      <div class="nav-dropdown">
+        <a class="topbar-link {% if active in ['offices-awarding','offices-funding'] %}active{% endif %}" href="{{ url_for('offices_view', role='awarding') }}">Offices</a>
+        <div class="nav-dropdown-menu">
+          <a href="{{ url_for('offices_view', role='awarding') }}" class="{% if active == 'offices-awarding' %}active{% endif %}">By Awarding Office</a>
+          <a href="{{ url_for('offices_view', role='funding') }}" class="{% if active == 'offices-funding' %}active{% endif %}">By Funding Office</a>
+        </div>
+      </div>
+      <a class="topbar-link {% if active == 'awardees' %}active{% endif %}" href="{{ url_for('awardees_view') }}">Awardees</a>
+    </nav>
+  </header>
+  <main class="workspace">
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

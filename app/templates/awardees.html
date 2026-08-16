@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}{% if selected %}{{ selected.display_name }}{% else %}Awardees{% endif %}{% endblock %}
+{% block content %}
+<div class="page-shell">
+  <div class="section-head">
+    <h1 class="page-title">Companies by Total Awarded</h1>
+    <p class="page-desc">Combines each company's direct-award dollars and subaward dollars into one list. A company can appear as both a direct awardee and a subawardee &mdash; both totals are counted, so some underlying contract value may be represented twice.</p>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Companies</div><div class="value">{{ rows|length }}</div></div>
+      <div class="stat-tile"><div class="label">Direct Award Total</div><div class="value accent">{{ total_direct|money }}</div></div>
+      <div class="stat-tile"><div class="label">Subaward Total</div><div class="value green">{{ total_sub|money }}</div></div>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="split-list">
+      <div class="split-list-header">All Companies &middot; {{ rows|length }}</div>
+      {% for r in rows %}
+        {% set av = avatar(r.display_name) %}
+        <a class="record-card {% if selected_key is not none and r.entity_key == selected_key %}active{% endif %}"
+           href="{{ url_for('awardees_view', key_token=r.url_key) }}">
+          <div class="avatar" style="background:{{ av.bg }};color:{{ av.fg }};">{{ av.initials }}</div>
+          <div class="record-body">
+            <div class="record-top">
+              <span class="record-title">{{ r.display_name or "(unknown)" }}</span>
+              <span class="record-amount">{{ r.combined_total|money }}</span>
+            </div>
+            <div class="record-sub">{{ r.state }}</div>
+            <div class="record-meta-row">
+              <span class="badge badge-{{ r.coverage.cls }}">{{ r.coverage.label }}</span>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+      {% if not rows %}<div class="empty-state">No companies found.</div>{% endif %}
+    </div>
+
+    <div class="split-detail">
+      {% if not selected %}
+        <div class="empty-selection">
+          <div class="big">&#127970;</div>
+          <div>Select a company from the list to see who they worked for.</div>
+        </div>
+      {% else %}
+        {% set av = avatar(selected.display_name) %}
+        <div class="detail-inner">
+          <div class="entity-header">
+            <div class="entity-avatar" style="background:{{ av.bg }};color:{{ av.fg }};">{{ av.initials }}</div>
+            <div>
+              <h1 class="entity-title">{{ selected.display_name or "(unknown)" }}</h1>
+              <div class="entity-meta">
+                {% if selected.uei %}<span>UEI {{ selected.uei }}</span>{% endif %}
+                {% if selected.state %}<span>{{ selected.state }}</span>{% endif %}
+                {% if selected.phone %}<span>{{ selected.phone }}</span>{% endif %}
+                <span class="badge badge-{{ selected.coverage.cls }}">{{ selected.coverage.label }}</span>
+              </div>
+              {% if not selected.phone %}<p class="note-text" style="margin:4px 0 0;">No contact phone on record &mdash; SAM.gov registration data wasn't populated for this company in Checkpoint 1. Named contacts at the company are planned for the next data batch.</p>{% endif %}
+            </div>
+          </div>
+
+          <div class="eval-row">
+            <div class="eval-group">
+              <div class="eval-label">Office Concentration</div>
+              <div class="eval-segment">
+                <span class="seg {% if selected.concentration == 'diversified' %}active tone-green{% endif %}">Diversified</span>
+                <span class="seg {% if selected.concentration == 'concentrated' %}active tone-amber{% endif %}">Concentrated</span>
+              </div>
+            </div>
+            <div class="eval-group">
+              <div class="eval-label">Subaward Visibility</div>
+              <div class="eval-segment">
+                <span class="seg {% if selected.visibility == 'low' %}active tone-red{% endif %}">Low</span>
+                <span class="seg {% if selected.visibility == 'medium' %}active tone-amber{% endif %}">Medium</span>
+                <span class="seg {% if selected.visibility == 'high' %}active tone-green{% endif %}">High</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-row" style="margin-bottom:20px;">
+            <div class="stat-tile"><div class="label">Direct Award Total</div><div class="value accent">{{ selected.direct_total|money }}</div></div>
+            <div class="stat-tile"><div class="label">Subaward Total</div><div class="value green">{{ selected.sub_total|money }}</div></div>
+            <div class="stat-tile"><div class="label">Combined</div><div class="value">{{ (selected.direct_total + selected.sub_total)|money }}</div></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Spend Profile Summary</h2>
+              <span class="badge badge-{{ selected.coverage.cls }}">{{ selected.coverage.label }}</span>
+            </div>
+            <div class="profile-grid">
+              <div class="profile-block">
+                <div class="profile-heading">Strengths</div>
+                <ul class="profile-list">
+                  {% for s in selected.strengths %}<li>{{ s }}</li>{% endfor %}
+                </ul>
+              </div>
+              <div class="profile-block">
+                <div class="profile-heading weak">Weaknesses</div>
+                <ul class="profile-list">
+                  {% for w in selected.weaknesses %}<li>{{ w }}</li>{% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Direct Awards &mdash; Work Performed for Offices</h2>
+              <span class="count">{{ selected.direct_rows|length }} awards</span>
+            </div>
+            <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Awarding Office</th>
+                  <th>Funding Office</th>
+                  <th>Award ID</th>
+                  <th class="th-desc">Description</th>
+                  <th>Service Start</th>
+                  <th class="num">Obligated</th>
+                  <th class="num">Potential Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in selected.direct_rows %}
+                <tr class="clickable" onclick="window.location='{{ url_for('offices_view', role='awarding', code_token=item.office_url_awarding) }}'">
+                  <td class="name-cell">
+                    <div class="primary">{{ item.award.awarding_office_name }}</div>
+                    <div class="secondary">{{ item.award.awarding_agency_name|agency }}</div>
+                  </td>
+                  <td>{{ item.award.funding_office_name }}</td>
+                  <td><a href="{{ record_url('award', item.award.award_id_piid) }}" onclick="event.stopPropagation()">{{ item.award.award_id_piid }}</a></td>
+                  <td class="desc-text">{{ item.award.transaction_description or item.award.base_transaction_description or "—" }}</td>
+                  <td class="record-row-date">{{ item.award.period_of_performance_start_date or "—" }}</td>
+                  <td class="num">{{ item.award.total_federal_action_obligation|money }}</td>
+                  <td class="num">{{ item.award.potential_total_value_of_award|money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+            {% if not selected.direct_rows %}<div class="empty-state">No direct awards &mdash; this company only appears as a subawardee below.</div>{% endif %}
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Subcontracted Work &mdash; Performed as a Subawardee</h2>
+              <span class="count">{{ selected.sub_rows|length }} subawards</span>
+            </div>
+            <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Prime Contractor</th>
+                  <th>Subaward #</th>
+                  <th>Ultimate Office</th>
+                  <th class="th-desc">Description</th>
+                  <th>Service Start</th>
+                  <th class="num">Subaward Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in selected.sub_rows %}
+                <tr class="clickable" onclick="window.location='{{ url_for('offices_view', role='awarding', code_token=item.office_url_awarding) }}'">
+                  <td class="name-cell"><div class="primary">{{ item.sub.prime_awardee_name }}</div></td>
+                  <td><a href="{{ record_url('subaward', item.sub.subaward_id) }}" onclick="event.stopPropagation()">{{ item.sub.subaward_number or item.sub.subaward_id }}</a></td>
+                  <td>
+                    <div class="primary" style="font-weight:500;">{{ item.sub.awarding_office_name }}</div>
+                    <div class="secondary">{{ item.sub.awarding_agency_name|agency }}</div>
+                  </td>
+                  <td class="desc-text">{{ item.sub.subaward_description or "—" }}</td>
+                  <td class="record-row-date">{{ item.sub.period_of_performance_start_date or "—" }}</td>
+                  <td class="num">{{ item.sub.subaward_amount|money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+            {% if not selected.sub_rows %}<div class="empty-state">No subawarded work on record for this company.</div>{% endif %}
+          </div>
+
+          {% with note_type="awardee" %}
+            {% include "_notes.html" %}
+          {% endwith %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

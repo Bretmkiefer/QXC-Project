@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ d.department }}{% endblock %}
+{% block content %}
+<div class="record-detail-header">
+  <div class="crumbs">
+    <a href="{{ url_for('index') }}">Home</a> /
+    <a href="{{ url_for('records_view', role=d.role, agency=d.agency) }}">{{ d.agency|agency }}</a> /
+    {{ d.department }}
+  </div>
+
+  <div class="record-detail-top">
+    <div>
+      <h1 class="record-detail-title" style="font-family:var(--font-sans);">{{ d.department }}</h1>
+      <div class="record-detail-meta">
+        <span class="badge badge-{{ d.coverage.cls }}">{{ d.coverage.label }}</span>
+        &nbsp;{{ d.agency|agency }} &middot; {{ role_label }} view
+        &middot; <a href="{{ url_for('records_view', role=d.role, agency=d.agency, department=d.department) }}">View records &rarr;</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="stat-row" style="padding:0 32px 20px;">
+  <div class="stat-tile"><div class="label">Offices</div><div class="value">{{ d.offices|length }}</div></div>
+  <div class="stat-tile"><div class="label">Records</div><div class="value">{{ d.record_count }}</div></div>
+  <div class="stat-tile"><div class="label">Reviewed</div><div class="value green">{{ d.viewed_count }}</div></div>
+  <div class="stat-tile"><div class="label">Unreviewed</div><div class="value amber">{{ d.unviewed_count }}</div></div>
+  <div class="stat-tile"><div class="label">Direct Total</div><div class="value accent">{{ d.direct_total|money }}</div></div>
+  <div class="stat-tile"><div class="label">Subaward Total</div><div class="value green">{{ d.subaward_total|money }}</div></div>
+</div>
+
+<div style="padding:0 32px;">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Offices in this Department</h2>
+      <span class="count">{{ d.offices|length }} offices</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Office</th>
+            <th class="num">Direct</th>
+            <th class="num">Subaward</th>
+            <th class="num">Records</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in d.offices %}
+          <tr class="clickable" onclick="window.location='{{ url_for('offices_view', role=d.role, code_token=o.url_code) }}'">
+            <td class="name-cell">
+              <div class="primary">{{ o.name or "(no office listed)" }}</div>
+              <div class="secondary">{{ o.code }}</div>
+            </td>
+            <td class="num">{{ o.direct_total|money }}</td>
+            <td class="num">{{ o.subaward_total|money }}</td>
+            <td class="num">{{ o.record_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not d.offices %}<div class="empty-state">No offices found.</div>{% endif %}
+  </div>
+</div>
+
+{% with note_type="department" %}
+  {% include "_notes.html" %}
+{% endwith %}
+{% endblock %}

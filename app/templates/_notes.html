@@ -1,0 +1,24 @@
+<div class="notes-section" id="notes">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Notes</h2>
+      <span class="count">{{ notes|length }} note{{ 's' if notes|length != 1 }}</span>
+    </div>
+    <form class="note-form" method="post" action="{{ url_for('add_note_route', record_type=note_type, token=note_token) }}">
+      <textarea name="note_text" placeholder="Add a note&hellip;" required></textarea>
+      <div><button type="submit" class="btn-primary">Add Note</button></div>
+    </form>
+    {% for n in notes %}
+    <div class="note-item">
+      <div class="note-text">{{ n.note_text }}</div>
+      <div class="note-meta">
+        <span class="note-date">{{ n.created_at }}</span>
+        <form method="post" action="{{ url_for('delete_note_route', record_type=note_type, token=note_token, note_id=n.id) }}" style="margin:0;">
+          <button type="submit" class="note-delete">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+    {% if not notes %}<div class="empty-state">No notes yet.</div>{% endif %}
+  </div>
+</div>

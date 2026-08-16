@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}{% if selected %}{{ selected.name }}{% else %}{{ role_label }} Spend{% endif %}{% endblock %}
+{% block content %}
+<div class="page-shell">
+  <div class="section-head">
+    <h1 class="page-title">Cisco Equipment Spend by Office</h1>
+    <p class="page-desc">Direct award obligations from the prime transactions dataset, alongside subaward dollars traced back to each office &mdash; shown separately to avoid double-counting.</p>
+    <div class="toggle-pair">
+      {% for key, cfg in roles.items() %}
+        <a href="{{ url_for('offices_view', role=key) }}" class="{% if key == role %}active{% endif %}">{{ cfg.label }}</a>
+      {% endfor %}
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Offices</div><div class="value">{{ rows|length }}</div></div>
+      <div class="stat-tile"><div class="label">Direct Award Total</div><div class="value accent">{{ total_direct|money }}</div></div>
+      <div class="stat-tile"><div class="label">Subaward Total</div><div class="value green">{{ total_sub|money }}</div></div>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="split-list">
+      <div class="split-list-header">By {{ role_label }} &middot; {{ rows|length }}</div>
+      {% for r in rows %}
+        {% set av = avatar(r.name) %}
+        <a class="record-card {% if selected_code is not none and r.code|string == selected_code %}active{% endif %}"
+           href="{{ url_for('offices_view', role=role, code_token=r.url_code) }}">
+          <div class="avatar" style="background:{{ av.bg }};color:{{ av.fg }};">{{ av.initials }}</div>
+          <div class="record-body">
+            <div class="record-top">
+              <span class="record-title">{{ r.name or "(no office listed)" }}</span>
+              <span class="record-amount">{{ (r.direct_total + r.subaward_total)|money }}</span>
+            </div>
+            <div class="record-sub">{{ r.agency|agency }}</div>
+            <div class="record-meta-row">
+              <span class="badge badge-{{ r.coverage.cls }}">{{ r.coverage.label }}</span>
+              <span class="record-code">{{ r.code }}</span>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+      {% if not rows %}<div class="empty-state">No offices found.</div>{% endif %}
+    </div>
+
+    <div class="split-detail">
+      {% if not selected %}
+        <div class="empty-selection">
+          <div class="big">&#128194;</div>
+          <div>Select an office from the list to see its awardees.</div>
+        </div>
+      {% else %}
+        {% set av = avatar(selected.name) %}
+        <div class="detail-inner">
+          <div class="entity-header">
+            <div class="entity-avatar" style="background:{{ av.bg }};color:{{ av.fg }};">{{ av.initials }}</div>
+            <div>
+              <h1 class="entity-title">{{ selected.name or "(no office listed)" }}</h1>
+              <div class="entity-meta">
+                <span>{{ selected.agency|agency }}</span>
+                {% if selected.sub_agency and selected.sub_agency != selected.agency %}<span><a href="{{ department_url(role, selected.agency, selected.sub_agency) }}">{{ selected.sub_agency|agency }}</a></span>{% endif %}
+                <span>Code: {{ selected.code }}</span>
+                <span class="badge badge-{{ selected.coverage.cls }}">{{ selected.coverage.label }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="eval-row">
+            <div class="eval-group">
+              <div class="eval-label">Vendor Concentration</div>
+              <div class="eval-segment">
+                <span class="seg {% if selected.concentration == 'diversified' %}active tone-green{% endif %}">Diversified</span>
+                <span class="seg {% if selected.concentration == 'concentrated' %}active tone-amber{% endif %}">Concentrated</span>
+              </div>
+            </div>
+            <div class="eval-group">
+              <div class="eval-label">Subaward Visibility</div>
+              <div class="eval-segment">
+                <span class="seg {% if selected.visibility == 'low' %}active tone-red{% endif %}">Low</span>
+                <span class="seg {% if selected.visibility == 'medium' %}active tone-amber{% endif %}">Medium</span>
+                <span class="seg {% if selected.visibility == 'high' %}active tone-green{% endif %}">High</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-row" style="margin-bottom:20px;">
+            <div class="stat-tile"><div class="label">Direct Award Total</div><div class="value accent">{{ selected.direct_total|money }}</div></div>
+            <div class="stat-tile"><div class="label">Direct Awardees</div><div class="value">{{ selected.awardees|length }}</div></div>
+            <div class="stat-tile"><div class="label">Subaward $ (all traced)</div><div class="value green">{{ selected.total_sub_traced|money }}</div></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Spend Profile Summary</h2>
+              <span class="badge badge-{{ selected.coverage.cls }}">{{ selected.coverage.label }}</span>
+            </div>
+            <div class="profile-grid">
+              <div class="profile-block">
+                <div class="profile-heading">Strengths</div>
+                <ul class="profile-list">
+                  {% for s in selected.strengths %}<li>{{ s }}</li>{% endfor %}
+                </ul>
+              </div>
+              <div class="profile-block">
+                <div class="profile-heading weak">Weaknesses</div>
+                <ul class="profile-list">
+                  {% for w in selected.weaknesses %}<li>{{ w }}</li>{% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Direct Awardees</h2>
+              <span class="count">{{ selected.awardees|length }} companies</span>
+            </div>
+            <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Awardee</th>
+                  <th>Award ID</th>
+                  <th class="th-desc">Description</th>
+                  <th>Contact</th>
+                  <th>Service Start</th>
+                  <th class="num">Obligated</th>
+                  <th class="num">Potential Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in selected.awardees %}
+                <tr class="clickable" onclick="window.location='{{ url_for('awardees_view', key_token=item.entity_url) }}'">
+                  <td class="name-cell">
+                    <div class="primary">{{ item.award.recipient_name }}</div>
+                    <div class="secondary">{{ item.award.recipient_state_code }}</div>
+                  </td>
+                  <td><a href="{{ record_url('award', item.award.award_id_piid) }}" onclick="event.stopPropagation()">{{ item.award.award_id_piid }}</a></td>
+                  <td class="desc-text">{{ item.award.transaction_description or item.award.base_transaction_description or "—" }}</td>
+                  <td class="record-row-date">{{ item.award.recipient_phone_number|phone or "—" }}</td>
+                  <td class="record-row-date">{{ item.award.period_of_performance_start_date or "—" }}</td>
+                  <td class="num">{{ item.award.total_federal_action_obligation|money }}</td>
+                  <td class="num">{{ item.award.potential_total_value_of_award|money }}</td>
+                </tr>
+                {% if item.subawardees %}
+                <tr>
+                  <td colspan="7" style="padding:0;">
+                    <details class="subgroup">
+                      <summary>{{ item.subawardees|length }} subawardee{{ 's' if item.subawardees|length != 1 }} under this award &middot; {{ item.sub_total|money }}</summary>
+                      <div class="subgroup-body">
+                        <table>
+                          <thead><tr><th>Subaward #</th><th>Subawardee</th><th class="th-desc">Description</th><th>Service Start</th><th class="num">Amount</th></tr></thead>
+                          <tbody>
+                            {% for s in item.subawardees %}
+                            <tr><td><a href="{{ record_url('subaward', s.subaward_id) }}">{{ s.subaward_number or s.subaward_id }}</a></td><td>{{ s.subawardee_name }}</td><td class="desc-text">{{ s.subaward_description or "—" }}</td><td class="record-row-date">{{ s.period_of_performance_start_date or "—" }}</td><td class="num">{{ s.subaward_amount|money }}</td></tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+            {% if not selected.awardees %}<div class="empty-state">No direct awards recorded for this office.</div>{% endif %}
+          </div>
+
+          {% if selected.unmatched_primes %}
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Subawardees (prime contract not in our direct-award dataset)</h2>
+              <span class="count">{{ selected.unmatched_total|money }} across {{ selected.unmatched_primes|length }} primes</span>
+            </div>
+            <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Prime Contractor</th><th>Subaward #</th><th>Subawardee</th><th class="th-desc">Description</th><th>Service Start</th><th class="num">Amount</th></tr>
+              </thead>
+              <tbody>
+                {% for p in selected.unmatched_primes %}
+                  {% for s in p.subawardees %}
+                  <tr>
+                    {% if loop.first %}<td rowspan="{{ p.subawardees|length }}" class="name-cell"><div class="primary">{{ p.prime_name }}</div></td>{% endif %}
+                    <td><a href="{{ record_url('subaward', s.subaward_id) }}">{{ s.subaward_number or s.subaward_id }}</a></td>
+                    <td>{{ s.subawardee_name }}</td>
+                    <td class="desc-text">{{ s.subaward_description or "—" }}</td>
+                    <td class="record-row-date">{{ s.period_of_performance_start_date or "—" }}</td>
+                    <td class="num">{{ s.subaward_amount|money }}</td>
+                  </tr>
+                  {% endfor %}
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+          <p class="note-text">These subawards report this office as the {{ role }} office, but their prime contract wasn't present in the prime transactions checkpoint &mdash; so no direct-award row exists to nest them under above.</p>
+          {% endif %}
+
+          {% with note_type="office" %}
+            {% include "_notes.html" %}
+          {% endwith %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Search Records{% endblock %}
+{% block content %}
+<div class="section-head" style="border-bottom:none;">
+  <h1 class="page-title">Search Records</h1>
+  <p class="page-desc">Parametric search across every individual direct-award and subaward record. Pick an agency and department, search for a prime or subcontractor, or search free text &mdash; then mark records as reviewed as you go.</p>
+  <p class="note-text">Each record now shows service start date and contractor contact phone where the source data has it. Two items from the wishlist aren't in Checkpoint 1's data at all yet: a named procurement/contracting officer, and router quantity (only total dollar value is reported at this level) &mdash; see the summary for what it'd take to add those.</p>
+
+  <div class="toggle-pair">
+    {% for key, cfg in roles.items() %}
+      <a href="{{ url_for('records_view', role=key) }}" class="{% if key == role %}active{% endif %}">{{ cfg.label }}</a>
+    {% endfor %}
+  </div>
+
+  <form method="get" action="{{ url_for('records_view') }}" class="filter-bar">
+    <input type="hidden" name="role" value="{{ role }}">
+    <div class="filter-field">
+      <label>Agency</label>
+      <select name="agency" onchange="this.form.submit()">
+        <option value="">All Agencies</option>
+        {% for a in agency_names %}
+        <option value="{{ a }}" {% if a == agency %}selected{% endif %}>{{ a|agency }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Department</label>
+      <select name="department" onchange="this.form.submit()">
+        <option value="">All Departments</option>
+        {% for d in dept_names %}
+        <option value="{{ d }}" {% if d == department %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Company (prime or sub)</label>
+      <input type="text" name="company" value="{{ company_q or '' }}" placeholder="e.g. Iron Bow">
+    </div>
+    <div class="filter-field grow">
+      <label>Search</label>
+      <input type="text" name="q" value="{{ q or '' }}" placeholder="Search descriptions, companies, offices&hellip;">
+    </div>
+    <button type="submit" class="btn-primary">Search</button>
+    {% if agency and department %}<a class="btn-reset" href="{{ department_url(role, agency, department) }}">View Department Summary &rarr;</a>{% endif %}
+    {% if agency or department or company_q or q %}<a class="btn-reset" href="{{ url_for('records_view', role=role) }}">Reset</a>{% endif %}
+  </form>
+
+  <div class="stat-row">
+    <div class="stat-tile"><div class="label">Matches</div><div class="value">{{ total_matches }}</div></div>
+    <div class="stat-tile"><div class="label">Shown</div><div class="value">{{ shown }}</div></div>
+    <div class="stat-tile"><div class="label">Reviewed (shown)</div><div class="value green">{{ viewed_in_results }}</div></div>
+    <div class="stat-tile"><div class="label">Unreviewed (shown)</div><div class="value amber">{{ shown - viewed_in_results }}</div></div>
+  </div>
+  {% if total_matches > shown %}
+  <p class="note-text">Showing the top {{ shown }} of {{ total_matches }} matches by dollar amount &mdash; narrow your filters to see the rest.</p>
+  {% endif %}
+</div>
+
+<div class="record-list">
+  {% for r in records %}
+  <div class="record-row {% if r.is_viewed %}is-viewed{% endif %}">
+    <div class="record-row-main">
+      <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ 'Direct Award' if r.record_type == 'award' else 'Subaward' }}</span>
+      <a class="record-row-id" href="{{ record_url(r.record_type, r.record_id) }}">{{ r.display_id }}</a>
+      <a class="record-row-company" href="{{ url_for('awardees_view', key_token=r.company_url) }}">{{ r.company_name or "(unknown)" }}</a>
+      {% if r.record_type == 'subaward' and r.prime_name %}<span class="record-row-prime">for {{ r.prime_name }}</span>{% endif %}
+      <span class="record-row-amount">{{ r.amount|money }}</span>
+    </div>
+    <div class="record-row-office">
+      <a href="{{ url_for('offices_view', role=role, code_token=r['office_url_' ~ role]) }}">{{ r[role ~ '_office_name'] }}</a>
+      &middot; {{ r[role ~ '_agency_name']|agency }}
+      {% if r[role ~ '_sub_agency_name'] and r[role ~ '_sub_agency_name'] != r[role ~ '_agency_name'] %} &middot; {{ r[role ~ '_sub_agency_name'] }}{% endif %}
+    </div>
+    {% if r.description %}<div class="record-row-desc">{{ r.description }}</div>{% endif %}
+    <div class="record-row-footer">
+      <span class="record-row-meta">
+        <span class="record-row-date">Action: {{ r.action_date or "—" }}</span>
+        <span class="record-row-date">Service start: {{ r.service_start or "—" }}</span>
+        {% if r.contact_phone %}<span class="record-row-date">Contact: {{ r.contact_phone }}</span>{% endif %}
+      </span>
+      <button type="button"
+              class="viewed-toggle {% if r.is_viewed %}is-viewed{% endif %}"
+              data-record-type="{{ r.record_type }}"
+              data-record-id="{{ r.record_id }}"
+              data-viewed="{{ 'true' if r.is_viewed else 'false' }}">
+        {{ 'Viewed' if r.is_viewed else 'Mark viewed' }}
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+  {% if not records %}<div class="empty-state">No records match these filters.</div>{% endif %}
+</div>
+{% endblock %}

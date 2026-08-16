@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ r.title }}{% endblock %}
+{% block content %}
+<div class="record-detail-header">
+  <div class="crumbs">
+    <a href="{{ url_for('index') }}">Home</a> /
+    <a href="{{ url_for('awardees_view', key_token=r.company_url) }}">{{ r.company_name }}</a> /
+    {{ r.title }}
+  </div>
+
+  <div class="record-detail-top">
+    <div>
+      <h1 class="record-detail-title">{{ r.title }}</h1>
+      <div class="record-detail-meta">
+        <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ r.type_label }}</span>
+        &nbsp;
+        <a href="{{ url_for('awardees_view', key_token=r.company_url) }}">{{ r.company_name }}</a>
+        {% if r.office_url_awarding %} &middot; <a href="{{ url_for('offices_view', role='awarding', code_token=r.office_url_awarding) }}">Awarding Office</a>{% endif %}
+        {% if r.office_url_funding %} &middot; <a href="{{ url_for('offices_view', role='funding', code_token=r.office_url_funding) }}">Funding Office</a>{% endif %}
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="stat-tile">
+        <div class="label">{{ r.amount_label }}</div>
+        <div class="value accent">{{ r.amount|money }}</div>
+      </div>
+      <button type="button"
+              class="viewed-toggle {% if r.viewed %}is-viewed{% endif %}"
+              data-record-type="{{ r.record_type }}"
+              data-record-id="{{ r.record_id }}"
+              data-viewed="{{ 'true' if r.viewed else 'false' }}"
+              style="pointer-events:auto;opacity:1;">
+        {{ 'Viewed' if r.viewed else 'Mark viewed' }}
+      </button>
+    </div>
+  </div>
+
+  {% if r.description %}<div class="record-detail-desc">{{ r.description }}</div>{% endif %}
+</div>
+
+{% if r.related %}
+<div class="related-banner">
+  {{ r.related.label }} &mdash; <a href="{{ r.related.url }}">View it &rarr;</a>
+</div>
+{% endif %}
+
+<div class="detail-groups">
+  {% for group in r.groups %}
+  <div class="detail-group-card">
+    <div class="detail-group-title">{{ group.title }}</div>
+    {% for f in group.fields %}
+    <div class="detail-field"><span class="label">{{ f.label }}</span><span class="value">{{ f.value }}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+{% with notes=r.notes, note_type=r.record_type, note_token=token %}
+  {% include "_notes.html" %}
+{% endwith %}
+{% endblock %}

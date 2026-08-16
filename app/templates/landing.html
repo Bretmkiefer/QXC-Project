@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Checkpoint 1 &middot; Local Proof of Concept</div>
+    <h1 class="hero-title">Cisco Equipment Intelligence</h1>
+    <p class="hero-sub">Federal direct-award and subaward data for Cisco networking equipment, rolled up by agency &mdash; with how much of it you've reviewed so far.</p>
+
+    <form method="get" action="{{ url_for('records_view') }}" class="hero-search">
+      <input type="text" name="q" placeholder="Search companies, offices, contract descriptions&hellip;">
+      <button type="submit">Search Records</button>
+    </form>
+
+    <div class="toggle-pair hero-toggle">
+      {% for key, cfg in roles.items() %}
+        <a href="{{ url_for('index', role=key) }}" class="{% if key == role %}active{% endif %}">{{ cfg.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<div class="stat-card-row">
+  <div class="stat-card"><div class="stat-card-value">{{ totals.agencies }}</div><div class="stat-card-label">Agencies</div></div>
+  <div class="stat-card"><div class="stat-card-value">{{ totals.records }}</div><div class="stat-card-label">Records</div></div>
+  <div class="stat-card"><div class="stat-card-value green">{{ totals.viewed }}</div><div class="stat-card-label">Reviewed</div></div>
+  <div class="stat-card"><div class="stat-card-value amber">{{ totals.unviewed }}</div><div class="stat-card-label">Unreviewed</div></div>
+  <div class="stat-card"><div class="stat-card-value accent">{{ totals.direct_total|money }}</div><div class="stat-card-label">Direct Total</div></div>
+  <div class="stat-card"><div class="stat-card-value green">{{ totals.subaward_total|money }}</div><div class="stat-card-label">Subaward Total</div></div>
+</div>
+
+<div class="section-head-plain">
+  <h2>Browse by Agency</h2>
+  <p>Click a card to jump straight to its records, or use the filters below to sort the list or jump to a specific agency and department.</p>
+
+  <form method="get" action="{{ url_for('index') }}" class="filter-bar" style="margin-top:14px;">
+    <input type="hidden" name="role" value="{{ role }}">
+    <div class="filter-field">
+      <label>Sort By</label>
+      <select name="sort" onchange="this.form.submit()">
+        {% for key, opt in sort_options.items() %}
+        <option value="{{ key }}" {% if key == sort %}selected{% endif %}>{{ opt[0] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Agency</label>
+      <select name="agency" onchange="this.form.submit()">
+        <option value="">All Agencies</option>
+        {% for a in agency_names %}
+        <option value="{{ a }}" {% if a == jump_agency %}selected{% endif %}>{{ a|agency }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Department</label>
+      <select name="department">
+        <option value="">All Departments</option>
+        {% for d in dept_names %}
+        <option value="{{ d }}" {% if d == jump_department %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" formaction="{{ url_for('records_view') }}" class="btn-primary">Jump to Records</button>
+    {% if jump_agency and jump_department %}<a class="btn-reset" href="{{ department_url(role, jump_agency, jump_department) }}">View Department Summary &rarr;</a>{% endif %}
+  </form>
+</div>
+
+<div class="agency-grid">
+  {% for r in rows %}
+    {% set av = avatar(r.agency) %}
+    <a class="agency-card" href="{{ url_for('records_view', role=role, agency=r.agency) }}">
+      <div class="agency-card-top">
+        <div class="avatar" style="background:{{ av.bg }};color:{{ av.fg }};">{{ av.initials }}</div>
+        <div class="agency-card-title">
+          <div class="agency-name">{{ (r.agency|agency) or "(no agency listed)" }}</div>
+          <span class="badge badge-{{ r.coverage.cls }}">{{ r.coverage.label }}</span>
+        </div>
+      </div>
+      <div class="agency-amounts">
+        <span style="color:var(--accent);font-weight:650;">{{ r.direct_total|money }}</span> direct &middot;
+        <span style="color:var(--green);font-weight:650;">{{ r.subaward_total|money }}</span> sub
+      </div>
+      <div class="agency-progress">
+        <div class="progress-track"><div class="progress-fill" style="width:{{ r.pct_viewed }}%;"></div></div>
+        <div class="progress-label">{{ r.viewed_count }} of {{ r.record_count }} records reviewed ({{ r.pct_viewed }}%)</div>
+      </div>
+    </a>
+  {% endfor %}
+  {% if not rows %}<div class="empty-state">No agencies found.</div>{% endif %}
+</div>
+{% endblock %}
