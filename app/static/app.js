@@ -23,6 +23,31 @@ document.addEventListener("click", function (e) {
     });
 });
 
+document.addEventListener("click", function (e) {
+  const btn = e.target.closest(".enrichment-toggle");
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const type = btn.dataset.recordType;
+  const id = btn.dataset.recordId;
+  const nextState = btn.dataset.target !== "true";
+
+  fetch(`/api/records/${encodeURIComponent(type)}/${encodeURIComponent(id)}/enrichment_target`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target: nextState }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      btn.dataset.target = data.target ? "true" : "false";
+      btn.textContent = data.target ? "In Enrichment Set" : "Add to Enrichment Set";
+      btn.classList.toggle("is-target", data.target);
+      const row = btn.closest(".record-row");
+      if (row) row.classList.toggle("is-enrichment-target", data.target);
+    });
+});
+
 // ---------------------------------------------------------- static demo --
 // On the Firebase static snapshot (window.QXC_STATIC is injected only by
 // scripts/build_static.py) there's no backend to do real filtering, so the
@@ -50,6 +75,10 @@ function initRecordsFilter() {
   const deptSelect = document.getElementById("department-select");
   const companyInput = document.getElementById("company-input");
   const qInput = document.getElementById("q-input");
+  const primeInput = document.getElementById("prime-input");
+  const ueiInput = document.getElementById("uei-input");
+  const cageInput = document.getElementById("cage-input");
+  const pscInput = document.getElementById("psc-input");
   const rows = Array.from(list.querySelectorAll(".record-row"));
 
   // This page is frozen with limit=all, so every (agency, department) pair
@@ -86,6 +115,10 @@ function initRecordsFilter() {
     const dept = deptSelect.value;
     const company = companyInput.value.trim().toLowerCase();
     const q = qInput.value.trim().toLowerCase();
+    const prime = primeInput.value.trim().toLowerCase();
+    const uei = ueiInput.value.trim().toLowerCase();
+    const cage = cageInput.value.trim().toLowerCase();
+    const psc = pscInput.value.trim().toLowerCase();
 
     let shown = 0;
     let reviewed = 0;
@@ -94,6 +127,10 @@ function initRecordsFilter() {
         (!agency || row.dataset.agency === agency) &&
         (!dept || row.dataset.department === dept) &&
         (!company || row.dataset.company.includes(company) || row.dataset.prime.includes(company)) &&
+        (!prime || row.dataset.prime.includes(prime)) &&
+        (!uei || row.dataset.uei.includes(uei)) &&
+        (!cage || row.dataset.cage.includes(cage)) &&
+        (!psc || row.dataset.psc.includes(psc)) &&
         (!q || row.dataset.search.includes(q));
       row.style.display = visible ? "" : "none";
       if (visible) {
@@ -137,6 +174,10 @@ function initRecordsFilter() {
   deptSelect.addEventListener("change", applyFilter);
   companyInput.addEventListener("input", applyFilter);
   qInput.addEventListener("input", applyFilter);
+  primeInput.addEventListener("input", applyFilter);
+  ueiInput.addEventListener("input", applyFilter);
+  cageInput.addEventListener("input", applyFilter);
+  pscInput.addEventListener("input", applyFilter);
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     applyFilter();
@@ -150,6 +191,10 @@ function initRecordsFilter() {
   if (initDept) deptSelect.value = initDept;
   if (params.get("company")) companyInput.value = params.get("company");
   if (params.get("q")) qInput.value = params.get("q");
+  if (params.get("prime")) primeInput.value = params.get("prime");
+  if (params.get("uei")) ueiInput.value = params.get("uei");
+  if (params.get("cage")) cageInput.value = params.get("cage");
+  if (params.get("psc")) pscInput.value = params.get("psc");
   applyFilter();
 }
 
