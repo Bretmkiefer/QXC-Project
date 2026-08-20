@@ -395,6 +395,7 @@ def build_records() -> pd.DataFrame:
     common = [
         "record_type", "record_id", "display_id", "company_name", "company_key", "prime_name",
         "description", "amount", "action_date", "service_start", "contact_phone",
+        "company_uei", "prime_uei", "psc_code", "psc_description", "cage_code",
         "awarding_office_name", "awarding_office_code", "awarding_agency_name", "awarding_sub_agency_name",
         "funding_office_name", "funding_office_code", "funding_agency_name", "funding_sub_agency_name",
     ]
@@ -412,6 +413,11 @@ def build_records() -> pd.DataFrame:
     a["action_date"] = a["latest_action_date"]
     a["service_start"] = a["period_of_performance_start_date"]
     a["contact_phone"] = a["recipient_phone_number"].apply(format_phone)
+    a["company_uei"] = a["recipient_uei"]
+    a["prime_uei"] = ""
+    a["psc_code"] = a["product_or_service_code"]
+    a["psc_description"] = a["product_or_service_code_description"]
+    a["cage_code"] = a["recipient_cage_code"]
 
     s = SUBAWARDS.copy()
     s["record_type"] = "subaward"
@@ -427,6 +433,11 @@ def build_records() -> pd.DataFrame:
     s["action_date"] = s["subaward_action_date"]
     s["service_start"] = s["period_of_performance_start_date"]
     s["contact_phone"] = ""  # not present in the subawards source file
+    s["company_uei"] = s["subawardee_uei"]
+    s["prime_uei"] = s["prime_awardee_uei"]
+    s["psc_code"] = ""
+    s["psc_description"] = ""
+    s["cage_code"] = ""
 
     records = pd.concat([a[common], s[common]], ignore_index=True)
     records["office_url_awarding"] = records["awarding_office_code"].astype(str).apply(encode_key)
