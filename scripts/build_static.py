@@ -38,11 +38,11 @@ DEMO_BANNER = (
     '<div style="background:#0a1930;color:#cfe0ee;font-size:12px;'
     'padding:9px 20px;text-align:center;font-family:Inter,-apple-system,'
     'Segoe UI,sans-serif;">Static preview snapshot for review &mdash; '
-    "“mark viewed” and notes are read-only here (no backend to save to); "
-    "run the app locally for those.</div>"
+    "“mark viewed”, notes, and the enrichment-set toggle are read-only here "
+    "(no backend to save to); run the app locally for those.</div>"
 )
 DEMO_STYLE = (
-    "<style>.viewed-toggle,.note-form textarea,.note-form button,.note-delete"
+    "<style>.viewed-toggle,.enrichment-toggle,.note-form textarea,.note-form button,.note-delete"
     "{pointer-events:none;opacity:.5;}</style>"
     "<script>window.QXC_STATIC = true;</script></head>"
 )
