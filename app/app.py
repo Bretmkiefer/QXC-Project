@@ -119,9 +119,11 @@ def load_data():
         awards = pd.read_sql("SELECT * FROM awards", conn)
         subawards = pd.read_sql("SELECT * FROM subawards", conn)
 
-    for col in ["recipient_uei", "recipient_name"]:
+    for col in ["recipient_uei", "recipient_name", "recipient_cage_code",
+                "product_or_service_code", "product_or_service_code_description"]:
         awards[col] = awards[col].fillna("")
-    for col in ["subawardee_uei", "subawardee_name", "prime_awardee_name", "matched_award_id_piid"]:
+    for col in ["subawardee_uei", "subawardee_name", "prime_awardee_name",
+                "matched_award_id_piid", "prime_awardee_uei"]:
         subawards[col] = subawards[col].fillna("")
 
     awards["entity_key"] = [
@@ -653,8 +655,11 @@ def filter_records(role: str, agency: str = None, department: str = None, compan
         df = df[mask]
     if enrichment_only:
         targets = get_enrichment_set()
-        mask = df.apply(lambda r: (r["record_type"], str(r["record_id"])) in targets, axis=1)
-        df = df[mask]
+        keep = pd.Series(
+            [(rt, str(rid)) in targets for rt, rid in zip(df["record_type"], df["record_id"])],
+            index=df.index, dtype=bool,
+        )
+        df = df[keep]
     return df.sort_values("amount", ascending=False)
 
 
