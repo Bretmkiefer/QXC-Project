@@ -1120,10 +1120,18 @@ def records_view():
     agency = request.args.get("agency") or None
     department = request.args.get("department") or None
     company_q = request.args.get("company") or None
+    prime_q = request.args.get("prime") or None
+    uei_q = request.args.get("uei") or None
+    cage_q = request.args.get("cage") or None
+    psc_q = request.args.get("psc") or None
     q = request.args.get("q") or None
+    enrichment_only = request.args.get("enrichment") == "1"
 
-    df = filter_records(role, agency=agency, department=department, company_q=company_q, q=q)
+    df = filter_records(role, agency=agency, department=department, company_q=company_q,
+                         prime_q=prime_q, uei_q=uei_q, cage_q=cage_q, psc_q=psc_q, q=q,
+                         enrichment_only=enrichment_only)
     viewed = get_viewed_set()
+    enrichment_set = get_enrichment_set()
 
     total_matches = len(df)
     # The static-site freezer passes limit=all so every record is embedded
@@ -1135,6 +1143,7 @@ def records_view():
     records = df.to_dict("records")
     for r in records:
         r["is_viewed"] = (r["record_type"], str(r["record_id"])) in viewed
+        r["is_enrichment_target"] = (r["record_type"], str(r["record_id"])) in enrichment_set
 
     viewed_in_results = sum(1 for r in records if r["is_viewed"])
 
@@ -1152,6 +1161,11 @@ def records_view():
         agency=agency,
         department=department,
         company_q=company_q,
+        prime_q=prime_q,
+        uei_q=uei_q,
+        cage_q=cage_q,
+        psc_q=psc_q,
+        enrichment_only=enrichment_only,
         q=q,
         agency_names=agency_names,
         dept_names=department_options(role, agency),
@@ -1188,6 +1202,7 @@ def record_detail_view(record_type, token):
     if detail is None:
         abort(404)
     detail["viewed"] = (record_type, str(record_id)) in get_viewed_set()
+    detail["is_enrichment_target"] = (record_type, str(record_id)) in get_enrichment_set()
     detail["notes"] = get_notes(record_type, record_id)
     return render_template("record_detail.html", r=detail, token=token, active=None)
 
