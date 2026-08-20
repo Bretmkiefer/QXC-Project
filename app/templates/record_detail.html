@@ -32,6 +32,14 @@
               style="pointer-events:auto;opacity:1;">
         {{ 'Viewed' if r.viewed else 'Mark viewed' }}
       </button>
+      <button type="button"
+              class="enrichment-toggle {% if r.is_enrichment_target %}is-target{% endif %}"
+              data-record-type="{{ r.record_type }}"
+              data-record-id="{{ r.record_id }}"
+              data-target="{{ 'true' if r.is_enrichment_target else 'false' }}"
+              style="pointer-events:auto;opacity:1;">
+        {{ 'In Enrichment Set' if r.is_enrichment_target else 'Add to Enrichment Set' }}
+      </button>
     </div>
   </div>
 

@@ -36,13 +36,30 @@
       <label>Company (prime or sub)</label>
       <input type="text" name="company" id="company-input" value="{{ company_q or '' }}" placeholder="e.g. Iron Bow">
     </div>
+    <div class="filter-field">
+      <label>Prime Contractor</label>
+      <input type="text" name="prime" id="prime-input" value="{{ prime_q or '' }}" placeholder="e.g. Presidio">
+    </div>
+    <div class="filter-field">
+      <label>UEI</label>
+      <input type="text" name="uei" id="uei-input" value="{{ uei_q or '' }}" placeholder="Entity UEI">
+    </div>
+    <div class="filter-field">
+      <label>CAGE</label>
+      <input type="text" name="cage" id="cage-input" value="{{ cage_q or '' }}" placeholder="CAGE code">
+    </div>
+    <div class="filter-field">
+      <label>PSC</label>
+      <input type="text" name="psc" id="psc-input" value="{{ psc_q or '' }}" placeholder="Product/Service Code">
+    </div>
     <div class="filter-field grow">
       <label>Search</label>
       <input type="text" name="q" id="q-input" value="{{ q or '' }}" placeholder="Search descriptions, companies, offices&hellip;">
     </div>
     <button type="submit" class="btn-primary">Search</button>
     {% if agency and department %}<a class="btn-reset" href="{{ department_url(role, agency, department) }}">View Department Summary &rarr;</a>{% endif %}
-    {% if agency or department or company_q or q %}<a class="btn-reset" href="{{ url_for('records_view', role=role) }}">Reset</a>{% endif %}
+    {% if agency or department or company_q or prime_q or uei_q or cage_q or psc_q or q %}<a class="btn-reset" href="{{ url_for('records_view', role=role) }}">Reset</a>{% endif %}
+    <a class="btn-reset" href="{{ url_for('records_view', role=role, enrichment=1) }}">View Enrichment Set &rarr;</a>
   </form>
 
   <div class="stat-row">
@@ -58,12 +75,15 @@
 
 <div class="record-list" id="records-list">
   {% for r in records %}
-  <div class="record-row clickable {% if r.is_viewed %}is-viewed{% endif %}"
+  <div class="record-row clickable {% if r.is_viewed %}is-viewed{% endif %} {% if r.is_enrichment_target %}is-enrichment-target{% endif %}"
        onclick="window.location='{{ record_url(r.record_type, r.record_id) }}'"
        data-agency="{{ r[role ~ '_agency_name'] or '' }}"
        data-department="{{ r[role ~ '_sub_agency_name'] or '' }}"
        data-company="{{ (r.company_name or '')|lower }}"
        data-prime="{{ (r.prime_name or '')|lower }}"
+       data-uei="{{ ((r.company_uei or '') ~ ' ' ~ (r.prime_uei or ''))|lower }}"
+       data-cage="{{ (r.cage_code or '')|lower }}"
+       data-psc="{{ ((r.psc_code or '') ~ ' ' ~ (r.psc_description or ''))|lower }}"
        data-search="{{ ((r.description or '') ~ ' ' ~ (r.company_name or '') ~ ' ' ~ (r.prime_name or '') ~ ' ' ~ (r[role ~ '_office_name'] or '') ~ ' ' ~ (r[role ~ '_agency_name'] or ''))|lower }}">
     <div class="record-row-main">
       <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ 'Direct Award' if r.record_type == 'award' else 'Subaward' }}</span>
@@ -95,6 +115,13 @@
               data-record-id="{{ r.record_id }}"
               data-viewed="{{ 'true' if r.is_viewed else 'false' }}">
         {{ 'Viewed' if r.is_viewed else 'Mark viewed' }}
+      </button>
+      <button type="button"
+              class="enrichment-toggle {% if r.is_enrichment_target %}is-target{% endif %}"
+              data-record-type="{{ r.record_type }}"
+              data-record-id="{{ r.record_id }}"
+              data-target="{{ 'true' if r.is_enrichment_target else 'false' }}">
+        {{ 'In Enrichment Set' if r.is_enrichment_target else 'Add to Enrichment Set' }}
       </button>
     </div>
   </div>
