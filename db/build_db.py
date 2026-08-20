@@ -51,6 +51,7 @@ def load_awards() -> pd.DataFrame:
         "recipient_state_code",
         "recipient_city_name",
         "recipient_phone_number",
+        "cage_code",
         "naics_code",
         "naics_description",
         "product_or_service_code",
@@ -61,6 +62,7 @@ def load_awards() -> pd.DataFrame:
         "prime_award_base_transaction_description",
     ]
     df = pd.read_csv(TRANSACTIONS_CSV, usecols=cols, low_memory=False)
+    df = df.rename(columns={"cage_code": "recipient_cage_code"})
     df["federal_action_obligation"] = pd.to_numeric(
         df["federal_action_obligation"], errors="coerce"
     ).fillna(0.0)
