@@ -554,7 +554,9 @@ def build_agency_rows(role: str, sort: str = "combined"):
     }
 
 
-def filter_records(role: str, agency: str = None, department: str = None, company_q: str = None, q: str = None):
+def filter_records(role: str, agency: str = None, department: str = None, company_q: str = None,
+                    prime_q: str = None, uei_q: str = None, cage_q: str = None, psc_q: str = None,
+                    q: str = None, enrichment_only: bool = False):
     agency_c = f"{role}_agency_name"
     sub_agency_c = f"{role}_sub_agency_name"
     office_c = f"{role}_office_name"
@@ -570,6 +572,24 @@ def filter_records(role: str, agency: str = None, department: str = None, compan
             df["company_name"].str.lower().str.contains(ql, na=False)
             | df["prime_name"].fillna("").str.lower().str.contains(ql, na=False)
         ]
+    if prime_q:
+        ql = prime_q.strip().lower()
+        df = df[df["prime_name"].fillna("").str.lower().str.contains(ql, na=False)]
+    if uei_q:
+        ql = uei_q.strip().lower()
+        df = df[
+            df["company_uei"].fillna("").str.lower().str.contains(ql, na=False)
+            | df["prime_uei"].fillna("").str.lower().str.contains(ql, na=False)
+        ]
+    if cage_q:
+        ql = cage_q.strip().lower()
+        df = df[df["cage_code"].fillna("").str.lower().str.contains(ql, na=False)]
+    if psc_q:
+        ql = psc_q.strip().lower()
+        df = df[
+            df["psc_code"].fillna("").str.lower().str.contains(ql, na=False)
+            | df["psc_description"].fillna("").str.lower().str.contains(ql, na=False)
+        ]
     if q:
         ql = q.strip().lower()
         mask = (
@@ -579,6 +599,10 @@ def filter_records(role: str, agency: str = None, department: str = None, compan
             | df[office_c].fillna("").str.lower().str.contains(ql, na=False)
             | df[agency_c].fillna("").str.lower().str.contains(ql, na=False)
         )
+        df = df[mask]
+    if enrichment_only:
+        targets = get_enrichment_set()
+        mask = df.apply(lambda r: (r["record_type"], str(r["record_id"])) in targets, axis=1)
         df = df[mask]
     return df.sort_values("amount", ascending=False)
 
