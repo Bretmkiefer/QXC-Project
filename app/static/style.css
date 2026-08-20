@@ -708,6 +708,7 @@ details.subgroup table { border: 1px solid var(--border); border-radius: 8px; ov
 .record-row.clickable { cursor: pointer; }
 .record-row.clickable:hover { border-color: var(--accent-2); box-shadow: var(--shadow-md); }
 .record-row.is-viewed { opacity: 0.72; }
+.record-row.is-enrichment-target { border-left: 3px solid var(--amber); background: var(--amber-soft); }
 
 .record-row-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
 .record-row-company { font-weight: 650; font-size: 13px; color: var(--text); cursor: pointer; }
@@ -757,6 +758,20 @@ details.subgroup table { border: 1px solid var(--border); border-radius: 8px; ov
 }
 .viewed-toggle:hover { border-color: var(--accent-2); color: var(--accent); }
 .viewed-toggle.is-viewed { background: var(--green-soft); border-color: transparent; color: var(--green); }
+
+.enrichment-toggle {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.enrichment-toggle:hover { border-color: var(--amber); color: var(--amber); }
+.enrichment-toggle.is-target { background: var(--amber-soft); border-color: transparent; color: var(--amber); }
 
 /* -------------------------------------------------------- record detail */
 
