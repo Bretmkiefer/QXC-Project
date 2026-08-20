@@ -311,6 +311,57 @@ def set_viewed(record_type: str, record_id: str, viewed: bool):
 ensure_viewed_table()
 
 
+def ensure_enrichment_table():
+    if USE_FIRESTORE:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS enrichment_targets (
+                record_type TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (record_type, record_id)
+            )
+            """
+        )
+
+
+def get_enrichment_set() -> set:
+    if USE_FIRESTORE:
+        docs = _fs_client.collection("enrichment_targets").stream()
+        return {(d.get("record_type"), d.get("record_id")) for d in (doc.to_dict() for doc in docs)}
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute("SELECT record_type, record_id FROM enrichment_targets")
+        return set(cur.fetchall())
+
+
+def set_enrichment_target(record_type: str, record_id: str, target: bool):
+    if USE_FIRESTORE:
+        ref = _fs_client.collection("enrichment_targets").document(f"{record_type}_{record_id}")
+        if target:
+            ref.set({"record_type": record_type, "record_id": record_id, "added_at": firestore.SERVER_TIMESTAMP})
+        else:
+            ref.delete()
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        if target:
+            conn.execute(
+                "INSERT OR IGNORE INTO enrichment_targets (record_type, record_id, added_at) "
+                "VALUES (?, ?, datetime('now'))",
+                (record_type, record_id),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM enrichment_targets WHERE record_type = ? AND record_id = ?",
+                (record_type, record_id),
+            )
+        conn.commit()
+
+
+ensure_enrichment_table()
+
+
 def ensure_notes_table():
     if USE_FIRESTORE:
         return
@@ -1116,6 +1167,16 @@ def api_set_viewed(record_type, record_id):
     viewed = bool(payload.get("viewed", True))
     set_viewed(record_type, record_id, viewed)
     return jsonify({"viewed": viewed})
+
+
+@app.route("/api/records/<record_type>/<record_id>/enrichment_target", methods=["POST"])
+def api_set_enrichment_target(record_type, record_id):
+    if record_type not in ("award", "subaward"):
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    target = bool(payload.get("target", True))
+    set_enrichment_target(record_type, record_id, target)
+    return jsonify({"target": target})
 
 
 @app.route("/record/<record_type>/<token>")

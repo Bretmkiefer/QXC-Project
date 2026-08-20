@@ -203,6 +203,16 @@ def main():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS enrichment_targets (
+                record_type TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (record_type, record_id)
+            )
+            """
+        )
 
     matched = (subawards["matched_award_id_piid"].notna()).sum()
     print(f"Loaded {len(awards)} awards ({awards['transaction_count'].sum()} transactions)")
