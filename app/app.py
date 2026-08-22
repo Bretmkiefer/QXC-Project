@@ -441,6 +441,136 @@ def delete_note(note_id):
 ensure_notes_table()
 
 
+CONTACT_FIELDS = (
+    "first_name", "last_name", "title", "organization_name", "uei", "cage",
+    "agency_office", "email", "phone", "linkedin_url", "contact_type",
+    "source", "source_url", "verified_at", "confidence",
+)
+
+
+def ensure_contacts_table():
+    if USE_FIRESTORE:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                first_name TEXT,
+                last_name TEXT,
+                title TEXT,
+                organization_name TEXT,
+                uei TEXT,
+                cage TEXT,
+                agency_office TEXT,
+                email TEXT,
+                phone TEXT,
+                linkedin_url TEXT,
+                contact_type TEXT,
+                source TEXT,
+                source_url TEXT,
+                verified_at TEXT,
+                confidence TEXT,
+                is_test_data INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contacts_uei ON contacts(uei)")
+
+
+def get_all_contacts() -> list:
+    if USE_FIRESTORE:
+        docs = _fs_client.collection("contacts").stream()
+        out = []
+        for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            out.append(d)
+        return out
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT * FROM contacts ORDER BY id DESC")
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_contact(contact_id) -> dict:
+    if USE_FIRESTORE:
+        doc = _fs_client.collection("contacts").document(str(contact_id)).get()
+        if not doc.exists:
+            return None
+        d = doc.to_dict()
+        d["id"] = doc.id
+        return d
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT * FROM contacts WHERE id = ?", (int(contact_id),))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def create_contact(fields: dict, is_test_data: bool = False) -> str:
+    data = {k: (fields.get(k) or "").strip() for k in CONTACT_FIELDS}
+    if USE_FIRESTORE:
+        doc_ref = _fs_client.collection("contacts").document()
+        doc_ref.set(
+            {
+                **data,
+                "is_test_data": is_test_data,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
+        return doc_ref.id
+    columns = ", ".join(CONTACT_FIELDS)
+    placeholders = ", ".join("?" for _ in CONTACT_FIELDS)
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            f"INSERT INTO contacts ({columns}, is_test_data, created_at, updated_at) "
+            f"VALUES ({placeholders}, ?, datetime('now'), datetime('now'))",
+            (*[data[k] for k in CONTACT_FIELDS], int(is_test_data)),
+        )
+        conn.commit()
+        return str(cur.lastrowid)
+
+
+def update_contact(contact_id, fields: dict):
+    data = {k: (fields.get(k) or "").strip() for k in CONTACT_FIELDS}
+    if USE_FIRESTORE:
+        _fs_client.collection("contacts").document(str(contact_id)).update(
+            {**data, "updated_at": firestore.SERVER_TIMESTAMP}
+        )
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in CONTACT_FIELDS)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            f"UPDATE contacts SET {set_clause}, updated_at = datetime('now') WHERE id = ?",
+            (*[data[k] for k in CONTACT_FIELDS], int(contact_id)),
+        )
+        conn.commit()
+
+
+def delete_contact(contact_id):
+    if USE_FIRESTORE:
+        _fs_client.collection("contacts").document(str(contact_id)).delete()
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM contacts WHERE id = ?", (int(contact_id),))
+        conn.commit()
+
+
+def _contact_entity_key(c: dict) -> str:
+    return entity_key(c.get("uei"), c.get("organization_name"))
+
+
+def get_contacts_for_entity(key: str) -> list:
+    return [c for c in get_all_contacts() if _contact_entity_key(c) == key]
+
+
+ensure_contacts_table()
+
+
 def build_records() -> pd.DataFrame:
     """One row per individual contract/subaward record, normalized to a
     shared column set so the agency rollup and the parametric search can
@@ -1212,7 +1342,7 @@ def record_detail_view(record_type, token):
     return render_template("record_detail.html", r=detail, token=token, active=None)
 
 
-NOTE_TYPES = ("award", "subaward", "office", "awardee", "department")
+NOTE_TYPES = ("award", "subaward", "office", "awardee", "department", "contact")
 
 
 @app.route("/notes/<record_type>/<token>/add", methods=["POST"])

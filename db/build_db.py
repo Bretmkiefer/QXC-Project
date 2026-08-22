@@ -213,6 +213,32 @@ def main():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                first_name TEXT,
+                last_name TEXT,
+                title TEXT,
+                organization_name TEXT,
+                uei TEXT,
+                cage TEXT,
+                agency_office TEXT,
+                email TEXT,
+                phone TEXT,
+                linkedin_url TEXT,
+                contact_type TEXT,
+                source TEXT,
+                source_url TEXT,
+                verified_at TEXT,
+                confidence TEXT,
+                is_test_data INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contacts_uei ON contacts(uei)")
 
     matched = (subawards["matched_award_id_piid"].notna()).sum()
     print(f"Loaded {len(awards)} awards ({awards['transaction_count'].sum()} transactions)")
