@@ -239,6 +239,20 @@ def main():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contacts_uei ON contacts(uei)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS contact_records (
+                contact_id TEXT NOT NULL,
+                record_type TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                linked_at TEXT NOT NULL,
+                PRIMARY KEY (contact_id, record_type, record_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_contact_records_record ON contact_records(record_type, record_id)"
+        )
 
     matched = (subawards["matched_award_id_piid"].notna()).sum()
     print(f"Loaded {len(awards)} awards ({awards['transaction_count'].sum()} transactions)")

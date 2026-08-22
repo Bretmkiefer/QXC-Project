@@ -571,6 +571,121 @@ def get_contacts_for_entity(key: str) -> list:
 ensure_contacts_table()
 
 
+def ensure_contact_records_table():
+    if USE_FIRESTORE:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS contact_records (
+                contact_id TEXT NOT NULL,
+                record_type TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                linked_at TEXT NOT NULL,
+                PRIMARY KEY (contact_id, record_type, record_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_contact_records_record ON contact_records(record_type, record_id)"
+        )
+
+
+def link_contact_to_record(contact_id, record_type: str, record_id: str):
+    contact_id = str(contact_id)
+    record_id = str(record_id)
+    if USE_FIRESTORE:
+        doc_id = f"{contact_id}_{record_type}_{record_id}"
+        _fs_client.collection("contact_records").document(doc_id).set(
+            {
+                "contact_id": contact_id,
+                "record_type": record_type,
+                "record_id": record_id,
+                "linked_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO contact_records (contact_id, record_type, record_id, linked_at) "
+            "VALUES (?, ?, ?, datetime('now'))",
+            (contact_id, record_type, record_id),
+        )
+        conn.commit()
+
+
+def unlink_contact_from_record(contact_id, record_type: str, record_id: str):
+    contact_id = str(contact_id)
+    record_id = str(record_id)
+    if USE_FIRESTORE:
+        doc_id = f"{contact_id}_{record_type}_{record_id}"
+        _fs_client.collection("contact_records").document(doc_id).delete()
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM contact_records WHERE contact_id = ? AND record_type = ? AND record_id = ?",
+            (contact_id, record_type, record_id),
+        )
+        conn.commit()
+
+
+def get_record_links_for_contact(contact_id) -> list:
+    contact_id = str(contact_id)
+    if USE_FIRESTORE:
+        docs = _fs_client.collection("contact_records").where("contact_id", "==", contact_id).stream()
+        return [
+            {"record_type": d.get("record_type"), "record_id": d.get("record_id")}
+            for d in (doc.to_dict() for doc in docs)
+        ]
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "SELECT record_type, record_id FROM contact_records WHERE contact_id = ?", (contact_id,)
+        )
+        return [{"record_type": rt, "record_id": rid} for rt, rid in cur.fetchall()]
+
+
+def get_contact_ids_for_record(record_type: str, record_id) -> list:
+    record_id = str(record_id)
+    if USE_FIRESTORE:
+        docs = (
+            _fs_client.collection("contact_records")
+            .where("record_type", "==", record_type)
+            .where("record_id", "==", record_id)
+            .stream()
+        )
+        return [d.get("contact_id") for d in (doc.to_dict() for doc in docs)]
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "SELECT contact_id FROM contact_records WHERE record_type = ? AND record_id = ?",
+            (record_type, record_id),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def get_records_for_contact_display(contact_id) -> list:
+    out = []
+    for link in get_record_links_for_contact(contact_id):
+        rt, rid = link["record_type"], link["record_id"]
+        match = RECORDS[(RECORDS["record_type"] == rt) & (RECORDS["record_id"].astype(str) == str(rid))]
+        if match.empty:
+            continue
+        row = match.iloc[0]
+        out.append(
+            {
+                "record_type": rt,
+                "record_id": rid,
+                "display_id": row["display_id"],
+                "company_name": row["company_name"],
+                "amount": row["amount"],
+                "url": record_url(rt, rid),
+            }
+        )
+    return out
+
+
+ensure_contact_records_table()
+
+
 def build_records() -> pd.DataFrame:
     """One row per individual contract/subaward record, normalized to a
     shared column set so the agency rollup and the parametric search can
