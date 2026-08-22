@@ -1521,6 +1521,13 @@ def record_detail_view(record_type, token):
     detail["viewed"] = (record_type, str(record_id)) in get_viewed_set()
     detail["is_enrichment_target"] = (record_type, str(record_id)) in get_enrichment_set()
     detail["notes"] = get_notes(record_type, record_id)
+    related_contact_ids = {str(cid) for cid in get_contact_ids_for_record(record_type, record_id)}
+    related_contacts = [get_contact(cid) for cid in related_contact_ids]
+    detail["related_contacts"] = [c for c in related_contacts if c]
+    org_key = decode_key(detail["company_url"])
+    detail["org_contacts_for_linking"] = [
+        c for c in get_contacts_for_entity(org_key) if str(c["id"]) not in related_contact_ids
+    ]
     return render_template("record_detail.html", r=detail, token=token, active=None)
 
 
