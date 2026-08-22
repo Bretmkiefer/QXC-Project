@@ -69,6 +69,46 @@
   {% endfor %}
 </div>
 
+<div class="panel" style="margin:0 32px 16px;" id="enrichment">
+  <div class="panel-header">
+    <h2>Enriched Purchase Info</h2>
+    <span class="badge badge-amber">Not from government data</span>
+  </div>
+  {% if r.enrichment %}
+  <div class="detail-field"><span class="label">Quantity</span><span class="value">{{ r.enrichment.quantity or "—" }}</span></div>
+  <div class="detail-field"><span class="label">Equipment Details</span><span class="value">{{ r.enrichment.equipment_details or "—" }}</span></div>
+  <div class="detail-field"><span class="label">Source</span><span class="value">{{ r.enrichment.source or "—" }}</span></div>
+  <div class="detail-field"><span class="label">Source URL</span><span class="value">{{ r.enrichment.source_url or "—" }}</span></div>
+  <div class="detail-field"><span class="label">Verification Date</span><span class="value">{{ r.enrichment.verified_at or "—" }}</span></div>
+  <div class="detail-field"><span class="label">Data Confidence</span><span class="value">{{ r.enrichment.confidence or "—" }}</span></div>
+  <div class="detail-field"><span class="label">Last Updated</span><span class="value">{{ r.enrichment.updated_at or "—" }}</span></div>
+  {% else %}
+  <div class="empty-state">No enrichment info added yet for this purchase.</div>
+  {% endif %}
+  <details class="inline-edit">
+    <summary>{{ 'Edit Enrichment Info' if r.enrichment else 'Add Enrichment Info' }}</summary>
+    <form method="post" action="{{ url_for('save_record_enrichment_route', record_type=r.record_type, token=token) }}" class="contact-form-grid">
+      <label>Quantity<input type="text" name="quantity" value="{{ r.enrichment.quantity if r.enrichment else '' }}"></label>
+      <label>Equipment Details<input type="text" name="equipment_details" value="{{ r.enrichment.equipment_details if r.enrichment else '' }}"></label>
+      <label>Source<input type="text" name="source" value="{{ r.enrichment.source if r.enrichment else '' }}" placeholder="e.g. Manual research"></label>
+      <label>Source URL<input type="url" name="source_url" value="{{ r.enrichment.source_url if r.enrichment else '' }}"></label>
+      <label>Verification Date<input type="date" name="verified_at" value="{{ r.enrichment.verified_at if r.enrichment else '' }}"></label>
+      <label>Data Confidence
+        <select name="confidence">
+          <option value="">&mdash;</option>
+          <option {% if r.enrichment and r.enrichment.confidence == 'High' %}selected{% endif %}>High</option>
+          <option {% if r.enrichment and r.enrichment.confidence == 'Medium' %}selected{% endif %}>Medium</option>
+          <option {% if r.enrichment and r.enrichment.confidence == 'Low' %}selected{% endif %}>Low</option>
+        </select>
+      </label>
+      <div class="contact-form-actions">
+        <button type="submit" class="btn-primary">Save</button>
+        <a href="#" onclick="this.closest('details').removeAttribute('open'); return false;" class="note-delete" style="margin-left:10px;">Cancel</a>
+      </div>
+    </form>
+  </details>
+</div>
+
 <div class="panel" style="margin:0 32px 16px;" id="contacts">
   <div class="panel-header">
     <h2>Related Contacts</h2>

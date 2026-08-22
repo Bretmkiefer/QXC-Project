@@ -1593,6 +1593,7 @@ def record_detail_view(record_type, token):
     detail["viewed"] = (record_type, str(record_id)) in get_viewed_set()
     detail["is_enrichment_target"] = (record_type, str(record_id)) in get_enrichment_set()
     detail["notes"] = get_notes(record_type, record_id)
+    detail["enrichment"] = get_record_enrichment(record_type, record_id)
     related_contact_ids = {str(cid) for cid in get_contact_ids_for_record(record_type, record_id)}
     related_contacts = [get_contact(cid) for cid in related_contact_ids]
     detail["related_contacts"] = [c for c in related_contacts if c]
@@ -1676,6 +1677,15 @@ def link_contact_to_record_route(record_type, token):
     if contact_id:
         link_contact_to_record(contact_id, record_type, record_id)
     return redirect((request.referrer or url_for("index")).split("#")[0] + "#contacts")
+
+
+@app.route("/record/<record_type>/<token>/enrichment/save", methods=["POST"])
+def save_record_enrichment_route(record_type, token):
+    if record_type not in ("award", "subaward"):
+        abort(404)
+    record_id = decode_key(token)
+    save_record_enrichment(record_type, record_id, request.form)
+    return redirect(url_for("record_detail_view", record_type=record_type, token=token) + "#enrichment")
 
 
 @app.route("/offices/<role>", defaults={"code_token": None})
