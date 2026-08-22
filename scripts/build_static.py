@@ -16,9 +16,11 @@ work, though: Search Records is frozen with every record embedded
 "submit a form to the server" to "filter the already-embedded rows/cards in
 the browser" - see initRecordsFilter()/initHomeFilter() in app/static/app.js.
 
-Every office, awardee, individual award/subaward, and department detail page
-is frozen individually and fully click-through, since those are real
-distinct paths, not query strings.
+Every office, awardee, individual award/subaward, contact, and department
+detail page is frozen individually and fully click-through, since those are
+real distinct paths, not query strings. The Add Contact form and the
+Link-contact control are visually disabled in the frozen output, same as
+"Mark viewed" and notes, since there's no backend to POST to.
 
 Usage: python scripts/build_static.py
 Output: public/ (Firebase Hosting's default publish directory)
@@ -38,11 +40,15 @@ DEMO_BANNER = (
     '<div style="background:#0a1930;color:#cfe0ee;font-size:12px;'
     'padding:9px 20px;text-align:center;font-family:Inter,-apple-system,'
     'Segoe UI,sans-serif;">Static preview snapshot for review &mdash; '
-    "“mark viewed”, notes, and the enrichment-set toggle are read-only here "
-    "(no backend to save to); run the app locally for those.</div>"
+    "“mark viewed”, notes, contacts (adding/linking), and the enrichment-set "
+    "toggle are read-only here (no backend to save to); run the app locally "
+    "for those.</div>"
 )
 DEMO_STYLE = (
-    "<style>.viewed-toggle,.enrichment-toggle,.note-form textarea,.note-form button,.note-delete"
+    "<style>.viewed-toggle,.enrichment-toggle,.note-form textarea,.note-form button,.note-delete,"
+    ".contact-form-grid input,.contact-form-grid select,.contact-form-actions button,"
+    ".link-contact-form select,.link-contact-form button,"
+    ".contact-unlink-btn,.contact-delete-btn"
     "{pointer-events:none;opacity:.5;}</style>"
     "<script>window.QXC_STATIC = true;</script></head>"
 )
@@ -92,6 +98,11 @@ def main():
     awardee_rows, _, _ = appmodule.build_awardees_rows()
     for r in awardee_rows:
         pages.append((f"/awardees/{r['url_key']}", f"awardees/{r['url_key']}.html"))
+
+    # Contact detail pages - one per row in the contacts table.
+    for c in appmodule.get_all_contacts():
+        token = appmodule.contact_token(c["id"])
+        pages.append((f"/contact/{token}", f"contact/{token}.html"))
 
     # Individual award/subaward detail pages - one per row in RECORDS.
     for _, row in appmodule.RECORDS.iterrows():

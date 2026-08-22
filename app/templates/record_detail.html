@@ -80,14 +80,14 @@
     <form method="post" action="{{ url_for('unlink_contact_route', token=contact_token(ct.id)) }}" style="display:inline; margin-left:10px;">
       <input type="hidden" name="record_type" value="{{ r.record_type }}">
       <input type="hidden" name="record_id" value="{{ r.record_id }}">
-      <button type="submit" class="note-delete">Unlink</button>
+      <button type="submit" class="note-delete contact-unlink-btn">Unlink</button>
     </form>
   </div>
   {% endfor %}
   {% if not r.related_contacts %}<div class="empty-state">No contacts linked to this record yet.</div>{% endif %}
 
   {% if r.org_contacts_for_linking %}
-  <form method="post" action="{{ url_for('link_contact_to_record_route', record_type=r.record_type, token=token) }}" style="padding:12px 16px; display:flex; gap:10px; align-items:center;">
+  <form method="post" action="{{ url_for('link_contact_to_record_route', record_type=r.record_type, token=token) }}" class="link-contact-form" style="padding:12px 16px; display:flex; gap:10px; align-items:center;">
     <select name="contact_id" required>
       <option value="">Link an existing contact from this org&hellip;</option>
       {% for ct in r.org_contacts_for_linking %}

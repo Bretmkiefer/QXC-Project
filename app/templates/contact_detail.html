@@ -18,7 +18,7 @@
       </div>
     </div>
     <form method="post" action="{{ url_for('delete_contact_route', token=token) }}" onsubmit="return confirm('Delete this contact?');" style="margin:0;">
-      <button type="submit" class="note-delete" style="font-size:13px;">Delete Contact</button>
+      <button type="submit" class="note-delete contact-delete-btn" style="font-size:13px;">Delete Contact</button>
     </form>
   </div>
 </div>
@@ -45,7 +45,7 @@
     <form method="post" action="{{ url_for('unlink_contact_route', token=token) }}" style="display:inline; margin-left:10px;">
       <input type="hidden" name="record_type" value="{{ link.record_type }}">
       <input type="hidden" name="record_id" value="{{ link.record_id }}">
-      <button type="submit" class="note-delete">Unlink</button>
+      <button type="submit" class="note-delete contact-unlink-btn">Unlink</button>
     </form>
   </div>
   {% endfor %}
