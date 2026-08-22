@@ -503,9 +503,13 @@ def get_contact(contact_id) -> dict:
         d = doc.to_dict()
         d["id"] = doc.id
         return d
+    try:
+        contact_id = int(contact_id)
+    except (TypeError, ValueError):
+        return None
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        cur = conn.execute("SELECT * FROM contacts WHERE id = ?", (int(contact_id),))
+        cur = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
         row = cur.fetchone()
         return dict(row) if row else None
 
@@ -1563,6 +1567,10 @@ def contact_detail_view(token):
 
 @app.route("/contacts/add", methods=["POST"])
 def add_contact_route():
+    first_name = (request.form.get("first_name") or "").strip()
+    last_name = (request.form.get("last_name") or "").strip()
+    if not first_name and not last_name:
+        return redirect(request.referrer or url_for("index"))
     contact_id = create_contact(request.form, is_test_data=False)
     return redirect(url_for("contact_detail_view", token=encode_key(contact_id)))
 
