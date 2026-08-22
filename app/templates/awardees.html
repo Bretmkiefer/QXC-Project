@@ -179,6 +179,58 @@
             {% if not selected.sub_rows %}<div class="empty-state">No subawarded work on record for this company.</div>{% endif %}
           </div>
 
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Contacts</h2>
+              <span class="count">{{ contacts|length }} contact{{ 's' if contacts|length != 1 }}</span>
+            </div>
+            {% for ct in contacts %}
+            <div class="note-item">
+              <a href="{{ contact_url(ct.id) }}">{{ ct.first_name }} {{ ct.last_name }}</a>{% if ct.title %} &mdash; {{ ct.title }}{% endif %}
+              {% if ct.is_test_data %}<span class="badge badge-amber">TEST</span>{% endif %}
+            </div>
+            {% endfor %}
+            {% if not contacts %}<div class="empty-state">No contacts yet for this organization.</div>{% endif %}
+
+            <form method="post" action="{{ url_for('add_contact_route') }}">
+              <input type="hidden" name="organization_name" value="{{ selected.display_name }}">
+              <input type="hidden" name="uei" value="{{ selected.uei }}">
+              <div class="contact-form-grid">
+                <label>First Name<input type="text" name="first_name"></label>
+                <label>Last Name<input type="text" name="last_name"></label>
+                <label>Title/Role<input type="text" name="title"></label>
+                <label>Contact Type
+                  <select name="contact_type">
+                    <option value="">&mdash;</option>
+                    <option>Contracting Officer</option>
+                    <option>Program Manager</option>
+                    <option>Business Development</option>
+                    <option>Technical/Engineering</option>
+                    <option>Executive</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label>Email<input type="email" name="email"></label>
+                <label>Phone<input type="text" name="phone"></label>
+                <label>LinkedIn URL<input type="url" name="linkedin_url"></label>
+                <label>Agency/Office<input type="text" name="agency_office" placeholder="if a govt contact"></label>
+                <label>CAGE<input type="text" name="cage"></label>
+                <label>Source<input type="text" name="source" placeholder="e.g. Manual research"></label>
+                <label>Source URL<input type="url" name="source_url"></label>
+                <label>Verification Date<input type="date" name="verified_at"></label>
+                <label>Data Confidence
+                  <select name="confidence">
+                    <option value="">&mdash;</option>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                </label>
+              </div>
+              <div class="contact-form-actions"><button type="submit" class="btn-primary">Add Contact</button></div>
+            </form>
+          </div>
+
           {% with note_type="awardee" %}
             {% include "_notes.html" %}
           {% endwith %}

@@ -1803,6 +1803,7 @@ def awardees_view(key_token):
     key = None
     note_token = None
     notes = []
+    contacts = []
     if key_token:
         key = decode_key(key_token)
         selected = build_awardee_detail(key)
@@ -1810,6 +1811,7 @@ def awardees_view(key_token):
             abort(404)
         note_token = encode_key(key)
         notes = get_notes("awardee", key)
+        contacts = get_contacts_for_entity(key)
 
     return render_template(
         "awardees.html",
@@ -1820,6 +1822,7 @@ def awardees_view(key_token):
         selected_key=key,
         note_token=note_token,
         notes=notes,
+        contacts=contacts,
         active="awardees",
     )
 
