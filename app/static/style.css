@@ -892,3 +892,32 @@ details.subgroup table { border: 1px solid var(--border); border-radius: 8px; ov
   padding: 0;
 }
 .note-delete:hover { color: #b91c1c; text-decoration: underline; }
+
+.contact-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 14px;
+  padding: 14px 16px 6px;
+}
+.contact-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.contact-form-grid input,
+.contact-form-grid select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+}
+.contact-form-grid input:focus,
+.contact-form-grid select:focus {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
+}
+.contact-form-actions { padding: 0 16px 14px; }

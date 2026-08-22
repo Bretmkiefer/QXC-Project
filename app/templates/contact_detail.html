@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ c.title }}{% endblock %}
+{% block content %}
+<div class="record-detail-header">
+  <div class="crumbs">
+    <a href="{{ url_for('index') }}">Home</a> /
+    {% if c.org_url %}<a href="{{ url_for('awardees_view', key_token=c.org_url) }}">{{ c.organization_name }}</a> / {% endif %}
+    {{ c.title }}
+  </div>
+
+  <div class="record-detail-top">
+    <div>
+      <h1 class="record-detail-title">{{ c.title }}</h1>
+      <div class="record-detail-meta">
+        <span class="badge badge-accent">Contact</span>
+        {% if c.is_test_data %}<span class="badge badge-amber">TEST DATA</span>{% endif %}
+        {% if c.org_url %} &middot; <a href="{{ url_for('awardees_view', key_token=c.org_url) }}">{{ c.organization_name }}</a>{% endif %}
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('delete_contact_route', token=token) }}" onsubmit="return confirm('Delete this contact?');" style="margin:0;">
+      <button type="submit" class="note-delete" style="font-size:13px;">Delete Contact</button>
+    </form>
+  </div>
+</div>
+
+<div class="detail-groups">
+  {% for group in c.groups %}
+  <div class="detail-group-card">
+    <div class="detail-group-title">{{ group.title }}</div>
+    {% for f in group.fields %}
+    <div class="detail-field"><span class="label">{{ f.label }}</span><span class="value">{{ f.value }}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="panel" style="margin:0 32px 16px;">
+  <div class="panel-header">
+    <h2>Linked Contracts/Purchases</h2>
+    <span class="count">{{ c.linked_records|length }}</span>
+  </div>
+  {% for link in c.linked_records %}
+  <div class="note-item">
+    <a href="{{ link.url }}">{{ link.display_id }}</a> &mdash; {{ link.company_name }} &mdash; {{ link.amount|money }}
+    <form method="post" action="{{ url_for('unlink_contact_route', token=token) }}" style="display:inline; margin-left:10px;">
+      <input type="hidden" name="record_type" value="{{ link.record_type }}">
+      <input type="hidden" name="record_id" value="{{ link.record_id }}">
+      <button type="submit" class="note-delete">Unlink</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% if not c.linked_records %}<div class="empty-state">Not yet linked to any specific contract or purchase.</div>{% endif %}
+</div>
+
+{% with notes=c.notes, note_type="contact", note_token=token %}
+  {% include "_notes.html" %}
+{% endwith %}
+{% endblock %}
