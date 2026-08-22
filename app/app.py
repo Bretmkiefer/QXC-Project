@@ -773,6 +773,14 @@ def record_url(record_type: str, record_id) -> str:
     return url_for("record_detail_view", record_type=record_type, token=encode_key(str(record_id)))
 
 
+def contact_url(contact_id) -> str:
+    return url_for("contact_detail_view", token=encode_key(str(contact_id)))
+
+
+def contact_token(contact_id) -> str:
+    return encode_key(str(contact_id))
+
+
 def _compute_asset_version() -> str:
     """Content hash of the static JS/CSS, appended to their URLs as a cache
     buster. Firebase Hosting/CDN and browsers otherwise keep serving a
@@ -795,6 +803,8 @@ app.jinja_env.filters["agency"] = agency_display
 app.jinja_env.filters["phone"] = format_phone
 app.jinja_env.globals["avatar"] = avatar
 app.jinja_env.globals["record_url"] = record_url
+app.jinja_env.globals["contact_url"] = contact_url
+app.jinja_env.globals["contact_token"] = contact_token
 app.jinja_env.globals["asset_version"] = ASSET_VERSION
 
 
@@ -1172,6 +1182,63 @@ def build_record_detail(record_type: str, record_id: str):
     return None
 
 
+def build_contact_detail(contact_id):
+    c = get_contact(contact_id)
+    if c is None:
+        return None
+
+    org_key = _contact_entity_key(c)
+    org_url = None
+    if (c.get("uei") or c.get("organization_name")) and not RECORDS[RECORDS["company_key"] == org_key].empty:
+        org_url = encode_key(org_key)
+
+    full_name = f"{c.get('first_name') or ''} {c.get('last_name') or ''}".strip()
+
+    groups = [
+        {
+            "title": "Contact",
+            "fields": [
+                _field("Name", full_name),
+                _field("Title/Role", c.get("title")),
+                _field("Contact Type", c.get("contact_type")),
+                _field("Email", c.get("email")),
+                _field("Phone", c.get("phone")),
+                _field("LinkedIn", c.get("linkedin_url")),
+            ],
+        },
+        {
+            "title": "Organization",
+            "fields": [
+                _field("Organization", c.get("organization_name")),
+                _field("UEI", c.get("uei")),
+                _field("CAGE", c.get("cage")),
+                _field("Agency/Office", c.get("agency_office")),
+            ],
+        },
+        {
+            "title": "Provenance",
+            "fields": [
+                _field("Source", c.get("source")),
+                _field("Source URL", c.get("source_url")),
+                _field("Verification Date", c.get("verified_at")),
+                _field("Data Confidence", c.get("confidence")),
+            ],
+        },
+    ]
+
+    return {
+        "id": str(c["id"]),
+        "first_name": c.get("first_name") or "",
+        "last_name": c.get("last_name") or "",
+        "title": full_name or "(unnamed contact)",
+        "is_test_data": bool(c.get("is_test_data")),
+        "org_url": org_url,
+        "organization_name": c.get("organization_name"),
+        "groups": groups,
+        "linked_records": get_records_for_contact_display(c["id"]),
+    }
+
+
 # ---------------------------------------------------------------- offices --
 
 def build_offices_rows(role: str):
@@ -1475,6 +1542,57 @@ def delete_note_route(record_type, token, note_id):
         abort(404)
     delete_note(note_id)
     return redirect((request.referrer or url_for("index")).split("#")[0] + "#notes")
+
+
+@app.route("/contact/<token>")
+def contact_detail_view(token):
+    contact_id = decode_key(token)
+    detail = build_contact_detail(contact_id)
+    if detail is None:
+        abort(404)
+    detail["notes"] = get_notes("contact", str(contact_id))
+    return render_template("contact_detail.html", c=detail, token=token, active=None)
+
+
+@app.route("/contacts/add", methods=["POST"])
+def add_contact_route():
+    contact_id = create_contact(request.form, is_test_data=False)
+    return redirect(url_for("contact_detail_view", token=encode_key(contact_id)))
+
+
+@app.route("/contact/<token>/edit", methods=["POST"])
+def edit_contact_route(token):
+    contact_id = decode_key(token)
+    update_contact(contact_id, request.form)
+    return redirect(url_for("contact_detail_view", token=token))
+
+
+@app.route("/contact/<token>/delete", methods=["POST"])
+def delete_contact_route(token):
+    contact_id = decode_key(token)
+    delete_contact(contact_id)
+    return redirect(request.referrer or url_for("index"))
+
+
+@app.route("/contact/<token>/unlink", methods=["POST"])
+def unlink_contact_route(token):
+    contact_id = decode_key(token)
+    record_type = request.form.get("record_type")
+    record_id = request.form.get("record_id")
+    if record_type and record_id:
+        unlink_contact_from_record(contact_id, record_type, record_id)
+    return redirect((request.referrer or url_for("index")).split("#")[0] + "#contacts")
+
+
+@app.route("/record/<record_type>/<token>/link_contact", methods=["POST"])
+def link_contact_to_record_route(record_type, token):
+    if record_type not in ("award", "subaward"):
+        abort(404)
+    record_id = decode_key(token)
+    contact_id = request.form.get("contact_id")
+    if contact_id:
+        link_contact_to_record(contact_id, record_type, record_id)
+    return redirect((request.referrer or url_for("index")).split("#")[0] + "#contacts")
 
 
 @app.route("/offices/<role>", defaults={"code_token": None})
