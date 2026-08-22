@@ -690,6 +690,74 @@ def get_records_for_contact_display(contact_id) -> list:
 ensure_contact_records_table()
 
 
+ENRICHMENT_FIELDS = ("quantity", "equipment_details", "source", "source_url", "verified_at", "confidence")
+
+
+def ensure_record_enrichment_table():
+    if USE_FIRESTORE:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS record_enrichment (
+                record_type TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                quantity TEXT,
+                equipment_details TEXT,
+                source TEXT,
+                source_url TEXT,
+                verified_at TEXT,
+                confidence TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (record_type, record_id)
+            )
+            """
+        )
+
+
+def get_record_enrichment(record_type: str, record_id) -> dict:
+    record_id = str(record_id)
+    if USE_FIRESTORE:
+        doc = _fs_client.collection("record_enrichment").document(f"{record_type}_{record_id}").get()
+        return doc.to_dict() if doc.exists else None
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            "SELECT * FROM record_enrichment WHERE record_type = ? AND record_id = ?",
+            (record_type, record_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def save_record_enrichment(record_type: str, record_id, fields: dict):
+    record_id = str(record_id)
+    data = {k: (fields.get(k) or "").strip() for k in ENRICHMENT_FIELDS}
+    if USE_FIRESTORE:
+        doc_ref = _fs_client.collection("record_enrichment").document(f"{record_type}_{record_id}")
+        existing = doc_ref.get()
+        payload = {**data, "record_type": record_type, "record_id": record_id, "updated_at": firestore.SERVER_TIMESTAMP}
+        if not existing.exists:
+            payload["created_at"] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(payload, merge=True)
+        return
+    columns = ", ".join(ENRICHMENT_FIELDS)
+    placeholders = ", ".join("?" for _ in ENRICHMENT_FIELDS)
+    update_clause = ", ".join(f"{k} = excluded.{k}" for k in ENRICHMENT_FIELDS)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            f"INSERT INTO record_enrichment (record_type, record_id, {columns}, created_at, updated_at) "
+            f"VALUES (?, ?, {placeholders}, datetime('now'), datetime('now')) "
+            f"ON CONFLICT(record_type, record_id) DO UPDATE SET {update_clause}, updated_at = datetime('now')",
+            (record_type, record_id, *[data[k] for k in ENRICHMENT_FIELDS]),
+        )
+        conn.commit()
+
+
+ensure_record_enrichment_table()
+
+
 def build_records() -> pd.DataFrame:
     """One row per individual contract/subaward record, normalized to a
     shared column set so the agency rollup and the parametric search can
