@@ -34,6 +34,48 @@
   {% endfor %}
 </div>
 
+<div class="panel" style="margin:0 32px 16px;">
+  <div class="panel-header"><h2>Edit Contact</h2></div>
+  <details class="inline-edit">
+    <summary>Edit</summary>
+    <form method="post" action="{{ url_for('edit_contact_route', token=token) }}" class="contact-form-grid">
+      <label>First Name<input type="text" name="first_name" value="{{ raw.first_name or '' }}"></label>
+      <label>Last Name<input type="text" name="last_name" value="{{ raw.last_name or '' }}"></label>
+      <label>Title/Role<input type="text" name="title" value="{{ raw.title or '' }}"></label>
+      <label>Contact Type
+        <select name="contact_type">
+          <option value="">&mdash;</option>
+          {% for opt in ["Contracting Officer", "Program Manager", "Business Development", "Technical/Engineering", "Executive", "Other"] %}
+          <option {% if raw.contact_type == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Email<input type="email" name="email" value="{{ raw.email or '' }}"></label>
+      <label>Phone<input type="text" name="phone" value="{{ raw.phone or '' }}"></label>
+      <label>LinkedIn URL<input type="url" name="linkedin_url" value="{{ raw.linkedin_url or '' }}"></label>
+      <label>Organization<input type="text" name="organization_name" value="{{ raw.organization_name or '' }}"></label>
+      <label>UEI<input type="text" name="uei" value="{{ raw.uei or '' }}"></label>
+      <label>CAGE<input type="text" name="cage" value="{{ raw.cage or '' }}"></label>
+      <label>Agency/Office<input type="text" name="agency_office" value="{{ raw.agency_office or '' }}"></label>
+      <label>Source<input type="text" name="source" value="{{ raw.source or '' }}"></label>
+      <label>Source URL<input type="url" name="source_url" value="{{ raw.source_url or '' }}"></label>
+      <label>Verification Date<input type="date" name="verified_at" value="{{ raw.verified_at or '' }}"></label>
+      <label>Data Confidence
+        <select name="confidence">
+          <option value="">&mdash;</option>
+          <option {% if raw.confidence == 'High' %}selected{% endif %}>High</option>
+          <option {% if raw.confidence == 'Medium' %}selected{% endif %}>Medium</option>
+          <option {% if raw.confidence == 'Low' %}selected{% endif %}>Low</option>
+        </select>
+      </label>
+      <div class="contact-form-actions">
+        <button type="submit" class="btn-primary">Save</button>
+        <a href="#" onclick="this.closest('details').removeAttribute('open'); return false;" class="note-delete" style="margin-left:10px;">Cancel</a>
+      </div>
+    </form>
+  </details>
+</div>
+
 <div class="panel" style="margin:0 32px 16px;" id="contacts">
   <div class="panel-header">
     <h2>Linked Contracts/Purchases</h2>

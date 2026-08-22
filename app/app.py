@@ -1631,7 +1631,8 @@ def contact_detail_view(token):
     if detail is None:
         abort(404)
     detail["notes"] = get_notes("contact", str(contact_id))
-    return render_template("contact_detail.html", c=detail, token=token, active=None)
+    raw = get_contact(contact_id)
+    return render_template("contact_detail.html", c=detail, raw=raw, token=token, active=None)
 
 
 @app.route("/contacts/add", methods=["POST"])
