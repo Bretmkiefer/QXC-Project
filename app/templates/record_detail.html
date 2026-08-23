@@ -69,7 +69,7 @@
   {% endfor %}
 </div>
 
-<div class="panel" style="margin:0 32px 16px;" id="enrichment">
+<div class="panel" style="margin:0 32px 16px;" id="purchase-info">
   <div class="panel-header">
     <h2>Enriched Purchase Info</h2>
     <span class="badge badge-amber">Not from government data</span>
@@ -82,6 +82,9 @@
   <div class="detail-field"><span class="label">Verification Date</span><span class="value">{{ r.enrichment.verified_at or "—" }}</span></div>
   <div class="detail-field"><span class="label">Data Confidence</span><span class="value">{{ r.enrichment.confidence or "—" }}</span></div>
   <div class="detail-field"><span class="label">Last Updated</span><span class="value">{{ r.enrichment.updated_at or "—" }}</span></div>
+  <form method="post" action="{{ url_for('delete_record_enrichment_route', record_type=r.record_type, token=token) }}" onsubmit="return confirm('Delete this enrichment info?');" style="margin:0; padding:0 16px 14px;">
+    <button type="submit" class="note-delete">Delete Enrichment Info</button>
+  </form>
   {% else %}
   <div class="empty-state">No enrichment info added yet for this purchase.</div>
   {% endif %}

@@ -755,6 +755,19 @@ def save_record_enrichment(record_type: str, record_id, fields: dict):
         conn.commit()
 
 
+def delete_record_enrichment(record_type: str, record_id):
+    record_id = str(record_id)
+    if USE_FIRESTORE:
+        _fs_client.collection("record_enrichment").document(f"{record_type}_{record_id}").delete()
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM record_enrichment WHERE record_type = ? AND record_id = ?",
+            (record_type, record_id),
+        )
+        conn.commit()
+
+
 ensure_record_enrichment_table()
 
 
@@ -1690,7 +1703,16 @@ def save_record_enrichment_route(record_type, token):
         abort(404)
     record_id = decode_key(token)
     save_record_enrichment(record_type, record_id, request.form)
-    return redirect(url_for("record_detail_view", record_type=record_type, token=token) + "#enrichment")
+    return redirect(url_for("record_detail_view", record_type=record_type, token=token) + "#purchase-info")
+
+
+@app.route("/record/<record_type>/<token>/enrichment/delete", methods=["POST"])
+def delete_record_enrichment_route(record_type, token):
+    if record_type not in ("award", "subaward"):
+        abort(404)
+    record_id = decode_key(token)
+    delete_record_enrichment(record_type, record_id)
+    return redirect(url_for("record_detail_view", record_type=record_type, token=token) + "#purchase-info")
 
 
 @app.route("/offices/<role>", defaults={"code_token": None})
