@@ -932,4 +932,4 @@ details.inline-edit[open] summary { margin-bottom: 6px; }
   outline: 2px solid var(--accent-2);
   outline-offset: 1px;
 }
-.contact-form-actions { padding: 0 16px 14px; }
+.contact-form-actions { padding: 0 16px 14px; grid-column: 1 / -1; }
