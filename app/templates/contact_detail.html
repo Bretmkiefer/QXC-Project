@@ -39,8 +39,8 @@
   <details class="inline-edit">
     <summary>Edit</summary>
     <form method="post" action="{{ url_for('edit_contact_route', token=token) }}" class="contact-form-grid">
-      <label>First Name<input type="text" name="first_name" value="{{ raw.first_name or '' }}"></label>
-      <label>Last Name<input type="text" name="last_name" value="{{ raw.last_name or '' }}"></label>
+      <label>First Name<input type="text" name="first_name" value="{{ raw.first_name or '' }}" required></label>
+      <label>Last Name<input type="text" name="last_name" value="{{ raw.last_name or '' }}" required></label>
       <label>Title/Role<input type="text" name="title" value="{{ raw.title or '' }}"></label>
       <label>Contact Type
         <select name="contact_type">

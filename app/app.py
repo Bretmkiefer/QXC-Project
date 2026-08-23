@@ -1648,6 +1648,10 @@ def add_contact_route():
 @app.route("/contact/<token>/edit", methods=["POST"])
 def edit_contact_route(token):
     contact_id = decode_key(token)
+    first_name = (request.form.get("first_name") or "").strip()
+    last_name = (request.form.get("last_name") or "").strip()
+    if not first_name and not last_name:
+        return redirect(url_for("contact_detail_view", token=token))
     update_contact(contact_id, request.form)
     return redirect(url_for("contact_detail_view", token=token))
 
