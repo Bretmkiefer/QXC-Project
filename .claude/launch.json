@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "qxc-flask",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app/app.py"],
+      "port": 5057
+    }
+  ]
+}

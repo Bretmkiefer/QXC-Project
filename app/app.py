@@ -572,6 +572,16 @@ def get_contacts_for_entity(key: str) -> list:
     return [c for c in get_all_contacts() if _contact_entity_key(c) == key]
 
 
+def get_contacts_for_office(code: str) -> list:
+    contact_ids = get_contact_ids_for_record("office", str(code))
+    out = []
+    for cid in contact_ids:
+        c = get_contact(cid)
+        if c is not None:
+            out.append(c)
+    return out
+
+
 ensure_contacts_table()
 
 
@@ -670,6 +680,24 @@ def get_records_for_contact_display(contact_id) -> list:
     out = []
     for link in get_record_links_for_contact(contact_id):
         rt, rid = link["record_type"], link["record_id"]
+        if rt == "office":
+            office_awards = AWARDS[AWARDS["awarding_office_code"].astype(str) == str(rid)]
+            office_subs = SUBAWARDS[SUBAWARDS["awarding_office_code"].astype(str) == str(rid)]
+            if office_awards.empty and office_subs.empty:
+                continue
+            name = (office_awards.iloc[0]["awarding_office_name"] if not office_awards.empty
+                    else office_subs.iloc[0]["awarding_office_name"])
+            out.append(
+                {
+                    "record_type": rt,
+                    "record_id": rid,
+                    "display_id": name,
+                    "company_name": None,
+                    "amount": None,
+                    "url": url_for("offices_view", role="awarding", code_token=encode_key(str(rid))),
+                }
+            )
+            continue
         match = RECORDS[(RECORDS["record_type"] == rt) & (RECORDS["record_id"].astype(str) == str(rid))]
         if match.empty:
             continue
@@ -1480,6 +1508,7 @@ def build_office_detail(role: str, code: str):
         "concentration": concentration_tier(top_share),
         "strengths": strengths,
         "weaknesses": weaknesses,
+        "contacts": get_contacts_for_office(code),
     }
 
 
@@ -1655,6 +1684,10 @@ def add_contact_route():
     if not first_name and not last_name:
         return redirect(request.referrer or url_for("index"))
     contact_id = create_contact(request.form, is_test_data=False)
+    link_record_type = request.form.get("link_record_type")
+    link_record_id = request.form.get("link_record_id")
+    if link_record_type and link_record_id:
+        link_contact_to_record(contact_id, link_record_type, link_record_id)
     return redirect(url_for("contact_detail_view", token=encode_key(contact_id)))
 
 
@@ -1688,7 +1721,7 @@ def unlink_contact_route(token):
 
 @app.route("/record/<record_type>/<token>/link_contact", methods=["POST"])
 def link_contact_to_record_route(record_type, token):
-    if record_type not in ("award", "subaward"):
+    if record_type not in ("award", "subaward", "office"):
         abort(404)
     record_id = decode_key(token)
     contact_id = request.form.get("contact_id")

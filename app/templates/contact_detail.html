@@ -78,12 +78,16 @@
 
 <div class="panel" style="margin:0 32px 16px;" id="contacts">
   <div class="panel-header">
-    <h2>Linked Contracts/Purchases</h2>
+    <h2>Linked Contracts/Purchases/Offices</h2>
     <span class="count">{{ c.linked_records|length }}</span>
   </div>
   {% for link in c.linked_records %}
   <div class="note-item">
+    {% if link.record_type == 'office' %}
+    <a href="{{ link.url }}">{{ link.display_id }}</a> &mdash; Office
+    {% else %}
     <a href="{{ link.url }}">{{ link.display_id }}</a> &mdash; {{ link.company_name }} &mdash; {{ link.amount|money }}
+    {% endif %}
     <form method="post" action="{{ url_for('unlink_contact_route', token=token) }}" style="display:inline; margin-left:10px;">
       <input type="hidden" name="record_type" value="{{ link.record_type }}">
       <input type="hidden" name="record_id" value="{{ link.record_id }}">
@@ -91,7 +95,7 @@
     </form>
   </div>
   {% endfor %}
-  {% if not c.linked_records %}<div class="empty-state">Not yet linked to any specific contract or purchase.</div>{% endif %}
+  {% if not c.linked_records %}<div class="empty-state">Not yet linked to any specific contract, purchase, or office.</div>{% endif %}
 </div>
 
 {% with notes=c.notes, note_type="contact", note_token=token %}

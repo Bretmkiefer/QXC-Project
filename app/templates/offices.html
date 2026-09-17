@@ -197,6 +197,63 @@
           <p class="note-text">These subawards report this office as the {{ role }} office, but their prime contract wasn't present in the prime transactions checkpoint &mdash; so no direct-award row exists to nest them under above.</p>
           {% endif %}
 
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Contacts</h2>
+              <span class="count">{{ selected.contacts|length }} contact{{ 's' if selected.contacts|length != 1 }}</span>
+            </div>
+            {% for ct in selected.contacts %}
+            <div class="note-item">
+              <a href="{{ contact_url(ct.id) }}">{{ ct.first_name }} {{ ct.last_name }}</a>{% if ct.title %} &mdash; {{ ct.title }}{% endif %}
+              {% if ct.email %} &mdash; {{ ct.email }}{% endif %}
+              {% if ct.phone %} &mdash; {{ ct.phone }}{% endif %}
+              <form method="post" action="{{ url_for('unlink_contact_route', token=contact_token(ct.id)) }}" style="display:inline; margin-left:10px;">
+                <input type="hidden" name="record_type" value="office">
+                <input type="hidden" name="record_id" value="{{ selected.code }}">
+                <button type="submit" class="note-delete contact-unlink-btn">Unlink</button>
+              </form>
+            </div>
+            {% endfor %}
+            {% if not selected.contacts %}<div class="empty-state">No contacts yet for this office.</div>{% endif %}
+
+            <form method="post" action="{{ url_for('add_contact_route') }}">
+              <input type="hidden" name="link_record_type" value="office">
+              <input type="hidden" name="link_record_id" value="{{ selected.code }}">
+              <input type="hidden" name="agency_office" value="{{ selected.name }}">
+              <div class="contact-form-grid">
+                <label>First Name<input type="text" name="first_name" required></label>
+                <label>Last Name<input type="text" name="last_name" required></label>
+                <label>Title/Role<input type="text" name="title"></label>
+                <label>Contact Type
+                  <select name="contact_type">
+                    <option value="">&mdash;</option>
+                    <option>Contracting Officer</option>
+                    <option>Program Manager</option>
+                    <option>Business Development</option>
+                    <option>Technical/Engineering</option>
+                    <option>Executive</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label>Email<input type="email" name="email"></label>
+                <label>Phone<input type="text" name="phone"></label>
+                <label>LinkedIn URL<input type="url" name="linkedin_url"></label>
+                <label>Source<input type="text" name="source" placeholder="e.g. Manual research"></label>
+                <label>Source URL<input type="url" name="source_url"></label>
+                <label>Verification Date<input type="date" name="verified_at"></label>
+                <label>Data Confidence
+                  <select name="confidence">
+                    <option value="">&mdash;</option>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                </label>
+              </div>
+              <div class="contact-form-actions"><button type="submit" class="btn-primary">Add Contact</button></div>
+            </form>
+          </div>
+
           {% with note_type="office" %}
             {% include "_notes.html" %}
           {% endwith %}
