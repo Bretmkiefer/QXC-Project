@@ -504,7 +504,11 @@ def delete_note(note_id):
         _fs_client.collection("notes").document(str(note_id)).delete()
         return
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM notes WHERE id = ?", (int(note_id),))
+        try:
+            note_id = int(note_id)
+        except (TypeError, ValueError):
+            return
+        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         conn.commit()
 
 
@@ -1728,7 +1732,7 @@ def add_note_route(record_type, token):
     return redirect((request.referrer or url_for("index")).split("#")[0] + "#notes")
 
 
-@app.route("/notes/<record_type>/<token>/<int:note_id>/delete", methods=["POST"])
+@app.route("/notes/<record_type>/<token>/<note_id>/delete", methods=["POST"])
 def delete_note_route(record_type, token, note_id):
     if record_type not in NOTE_TYPES:
         abort(404)
