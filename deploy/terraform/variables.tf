@@ -87,8 +87,8 @@ variable "github_repo" {
   default     = "Bretmkiefer/QXC-Project"
 }
 
-variable "github_branch" {
-  description = "Branch whose pushes may deploy."
-  type        = string
-  default     = "main"
+variable "github_branches" {
+  description = "Branches allowed to deploy. Keep this to main once the deploy branch is merged."
+  type        = list(string)
+  default     = ["main"]
 }

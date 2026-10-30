@@ -24,3 +24,9 @@ deploy/terraform/*.tfstate*
 deploy/terraform/*.tfvars
 !deploy/terraform/terraform.tfvars.example
 deploy/terraform/.terraform.lock.hcl
+
+# editor swap/backup files (a vim .swp of tfvars once leaked secrets)
+*.swp
+*.swo
+*~
+.*.sw?

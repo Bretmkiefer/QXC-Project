@@ -11,7 +11,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, deploy/gcp-cloud-run] # drop the deploy branch once merged
   workflow_dispatch:
 
 permissions:

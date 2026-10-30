@@ -207,8 +207,11 @@ resource "google_cloud_run_v2_service" "app" {
         name = "QXC_BASIC_AUTH"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.basic_auth.secret_id
-            version = "latest"
+            secret = google_secret_manager_secret.basic_auth.secret_id
+            # Pinned to the version terraform manages, not "latest", so a
+            # password rotation changes the template and rolls a new
+            # revision automatically.
+            version = google_secret_manager_secret_version.basic_auth.version
           }
         }
       }

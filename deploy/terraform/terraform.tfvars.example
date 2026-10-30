@@ -32,4 +32,4 @@ billing_account_id = ""
 monthly_budget_usd = 25
 
 github_repo   = "Bretmkiefer/QXC-Project"
-github_branch = "main"
+github_branches = ["main"]
