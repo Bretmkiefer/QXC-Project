@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.claude
+.firebase
+.firebaserc
+firebase.json
+public
+db/*.db
+deploy/terraform
+*.md
+.env

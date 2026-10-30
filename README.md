@@ -5,6 +5,8 @@ the Cisco-equipment prime transaction and subaward checkpoint-1 CSVs.
 
 ## Setup
 
+For running the production container or deploying to Google Cloud, see [DEPLOY.md](DEPLOY.md).
+
 ```
 pip install -r requirements.txt
 ```

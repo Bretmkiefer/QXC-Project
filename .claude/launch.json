@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "qxc-flask",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["app/app.py"],
       "port": 5057
     }

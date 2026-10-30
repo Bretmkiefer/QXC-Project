@@ -1,0 +1,68 @@
+# Build the container, push it to Artifact Registry, then roll Cloud Run to
+# the new image. Each image is tagged with the git sha (what gets deployed)
+# and :latest.
+#
+# One-time setup (values come from `terraform output`):
+#   Repository variables: GCP_PROJECT_ID, GCP_REGION, GCP_WORKLOAD_IDENTITY_PROVIDER,
+#     GCP_DEPLOY_SERVICE_ACCOUNT, GCP_IMAGE, GCP_DATA_BUCKET, CLOUD_RUN_SERVICE
+# No service-account keys are stored in GitHub; the job authenticates via
+# Workload Identity Federation (OIDC).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (keyless)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Fetch source CSVs from the data bucket
+        run: gcloud storage cp "gs://${{ vars.GCP_DATA_BUCKET }}/raw/*.csv" data/raw/
+
+      - name: Log in to Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: |
+            ${{ vars.GCP_IMAGE }}:${{ github.sha }}
+            ${{ vars.GCP_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Roll out to Cloud Run
+        run: |
+          gcloud run services update "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --image "${{ vars.GCP_IMAGE }}:${{ github.sha }}" \
+            --quiet
+          echo "Deployed: $(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}" --region "${{ vars.GCP_REGION }}" --format 'value(status.url)')"

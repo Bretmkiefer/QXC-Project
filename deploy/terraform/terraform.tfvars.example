@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# Project ID (not the display name "Quantum"): Cloud console > project
+# dropdown > ID column, e.g. "quantum-123456".
+project_id = "quantum-513214"
+region     = "us-central1"
+name       = "qxc-equipment-intelligence"
+
+# One or more logins, comma-separated, "user:password[:role]". role is
+# "edit" (default) or "view" (browse only, no notes/contacts changes).
+# Passwords can't contain ':' or ','.
+basic_auth_credentials = "qxc:CHANGE-ME-edit-password,board:CHANGE-ME-view-password:view"
+
+# Lifts the org's domain-restricted-sharing policy for this project so the
+# URL is publicly reachable (the app's login still applies). Needs the
+# Organization Policy Administrator role on the kiefer.xyz organization.
+allow_public_access_override = true
+
+# Set false if the project already has a Firestore database
+# (Firebase console > Build > Firestore Database shows one).
+create_firestore_database = true
+
+# Cost controls. min_instances 0 = scale to zero (~$0 idle, ~10 s cold start
+# on the first visit). Flip to 1 (~$8/month) for the board-meeting week.
+# max_instances is the hard cap on what the service can ever cost.
+min_instances = 0
+max_instances = 2
+
+# Budget alert (emails billing admins at 50/90/100/150%). Billing > Account
+# management shows the ID. Needs Billing Account Costs Manager; otherwise
+# leave "" and have the billing owner create a budget in the console.
+billing_account_id = ""
+monthly_budget_usd = 25
+
+github_repo   = "Bretmkiefer/QXC-Project"
+github_branch = "main"

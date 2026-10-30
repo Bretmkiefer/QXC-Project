@@ -1,0 +1,20 @@
+# Local run of the production container. User-entered data (notes, contacts,
+# enrichment) persists in the qxc-data volume across restarts.
+#
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# Set QXC_BASIC_AUTH="someuser:somepassword" in your shell (or a .env file)
+# to exercise the login gate the hosted deployment uses.
+services:
+  web:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      QXC_DB_PATH: /data/qxc.db
+      QXC_BASIC_AUTH: ${QXC_BASIC_AUTH:-}
+    volumes:
+      - qxc-data:/data
+volumes:
+  qxc-data: {}

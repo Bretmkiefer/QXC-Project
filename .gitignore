@@ -16,3 +16,11 @@ data/raw/*.csv
 public/
 .firebase/
 
+!data/raw/.gitkeep
+
+# terraform
+deploy/terraform/.terraform/
+deploy/terraform/*.tfstate*
+deploy/terraform/*.tfvars
+!deploy/terraform/terraform.tfvars.example
+deploy/terraform/.terraform.lock.hcl

@@ -15,16 +15,83 @@ import base64
 import json
 import os
 import re
+import secrets
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
-from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, url_for
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "db" / "qxc.db"
+# QXC_DB_PATH lets a hosted deployment keep the database on a mounted volume
+# (see deploy/entrypoint.sh, which seeds it from the image's copy on first
+# boot). Unset locally, so `python app/app.py` behaves exactly as before.
+DB_PATH = Path(os.environ.get("QXC_DB_PATH") or ROOT / "db" / "qxc.db")
 
 app = Flask(__name__)
+
+# ------------------------------------------------------------ deploy gate --
+# Stopgap access control for hosted deployments until SSO lands. QXC_BASIC_AUTH
+# holds one or more comma-separated "user:password[:role]" entries, e.g.
+#   "qxc:S3cret,board:ReadOnlyPw:view"
+# role is "edit" (default) or "view"; viewers can browse everything but every
+# write (POST) is refused with 403. Passwords therefore can't contain ':' or
+# ','. Wired from Secret Manager in deploy/terraform. When the var is unset
+# the gate is off, so local runs are unaffected.
+def _parse_basic_auth(raw: str) -> dict:
+    users = {}
+    for entry in raw.split(","):
+        parts = entry.strip().split(":")
+        if len(parts) < 2:
+            continue
+        user, password = parts[0].strip(), parts[1]
+        role = parts[2].strip().lower() if len(parts) > 2 else "edit"
+        if user and password:
+            users[user] = (password, "view" if role == "view" else "edit")
+    return users
+
+
+BASIC_AUTH_USERS = _parse_basic_auth(os.environ.get("QXC_BASIC_AUTH", ""))
+BASIC_AUTH_ENABLED = bool(BASIC_AUTH_USERS)
+
+# Written at image build time by the Dockerfile (data vintage); absent locally.
+_BUILD_INFO_PATH = DB_PATH.parent / "build_info.json"
+BUILD_INFO = json.loads(_BUILD_INFO_PATH.read_text()) if _BUILD_INFO_PATH.exists() else {}
+
+
+@app.get("/health")
+def health():
+    """Liveness/readiness probe for the container platform; never gated."""
+    return jsonify(
+        status="ok",
+        awards=int(len(AWARDS)),
+        subawards=int(len(SUBAWARDS)),
+        user_data_store="firestore" if USE_FIRESTORE else "sqlite",
+        data=BUILD_INFO,
+    )
+
+
+@app.before_request
+def require_basic_auth():
+    if not BASIC_AUTH_ENABLED or request.path == "/health":
+        return None
+    auth = request.authorization
+    if auth is not None and auth.type == "basic":
+        expected = BASIC_AUTH_USERS.get(auth.username or "")
+        if expected is not None and secrets.compare_digest(auth.password or "", expected[0]):
+            g.auth_user, g.auth_role = auth.username, expected[1]
+            if expected[1] == "view" and request.method not in ("GET", "HEAD", "OPTIONS"):
+                return Response("This account is view-only.", 403)
+            return None
+    return Response(
+        "Authentication required.", 401, {"WWW-Authenticate": 'Basic realm="QXC Equipment Intelligence"'}
+    )
+
+
+@app.context_processor
+def inject_auth():
+    return {"auth_user": getattr(g, "auth_user", None), "auth_role": getattr(g, "auth_role", "edit")}
+
 
 ROLES = {
     "awarding": {
@@ -242,18 +309,21 @@ def extract_models(text) -> list:
 
 # ---------------------------------------------------- read/write storage --
 # The award/subaward data above is bundled read-only into the deploy (built
-# by db/build_db.py) and always read via sqlite3, everywhere. But viewed
-# status and notes are written at runtime by users, and Cloud Run gives an
-# instance no durable local disk between requests - so on Cloud Run those two
-# go to Firestore instead. Locally (no K_SERVICE env var, which only Cloud
-# Run sets) they keep using db/qxc.db exactly as before, so `python
-# app/app.py` needs no GCP credentials and behaves unchanged.
-USE_FIRESTORE = bool(os.environ.get("K_SERVICE"))
+# by db/build_db.py) and always read via sqlite3, everywhere. But everything
+# users enter at runtime (viewed status, notes, contacts, enrichment) must
+# outlive a container, and Cloud Run gives an instance no durable local disk
+# - so on Cloud Run those go to Firestore instead. Locally (no K_SERVICE env
+# var, which only Cloud Run sets) they keep using db/qxc.db exactly as
+# before, so `python app/app.py` needs no GCP credentials and behaves
+# unchanged. QXC_USE_FIRESTORE=0|1 overrides the auto-detection either way.
+USE_FIRESTORE = (
+    os.environ.get("QXC_USE_FIRESTORE", "1" if os.environ.get("K_SERVICE") else "0") == "1"
+)
 
 if USE_FIRESTORE:
     from google.cloud import firestore
 
-    _fs_client = firestore.Client()
+    _fs_client = firestore.Client(database=os.environ.get("QXC_FIRESTORE_DATABASE", "(default)"))
 
 
 def _fs_timestamp(value) -> str:
@@ -1981,4 +2051,10 @@ def awardees_view(key_token):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5057)
+    # Local dev server only. Hosted deployments run gunicorn via
+    # deploy/entrypoint.sh and never reach this block.
+    app.run(
+        debug=os.environ.get("FLASK_DEBUG", "1") == "1",
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5057")),
+    )
