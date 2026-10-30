@@ -822,7 +822,13 @@ def get_record_enrichment(record_type: str, record_id) -> dict:
     record_id = str(record_id)
     if USE_FIRESTORE:
         doc = _fs_client.collection("record_enrichment").document(f"{record_type}_{record_id}").get()
-        return doc.to_dict() if doc.exists else None
+        if not doc.exists:
+            return None
+        d = doc.to_dict()
+        # Same "YYYY-MM-DD HH:MM:SS" text SQLite returns, not a datetime repr.
+        for k in ("created_at", "updated_at"):
+            d[k] = _fs_timestamp(d.get(k))
+        return d
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.execute(
@@ -1772,6 +1778,8 @@ def edit_contact_route(token):
     last_name = (request.form.get("last_name") or "").strip()
     if not first_name and not last_name:
         return redirect(url_for("contact_detail_view", token=token))
+    if get_contact(contact_id) is None:
+        abort(404)
     update_contact(contact_id, request.form)
     return redirect(url_for("contact_detail_view", token=token))
 
@@ -1779,7 +1787,8 @@ def edit_contact_route(token):
 @app.route("/contact/<token>/delete", methods=["POST"])
 def delete_contact_route(token):
     contact_id = decode_key(token)
-    delete_contact(contact_id)
+    if get_contact(contact_id) is not None:
+        delete_contact(contact_id)
     return redirect(request.referrer or url_for("index"))
 
 
