@@ -207,6 +207,8 @@ def load_data():
                 "matched_award_id_piid", "prime_awardee_uei"]:
         subawards[col] = subawards[col].fillna("")
 
+    if "award_piid" not in awards.columns:  # database built before award keys existed
+        awards["award_piid"] = awards["award_id_piid"]
     awards["entity_key"] = [
         entity_key(u, n) for u, n in zip(awards["recipient_uei"], awards["recipient_name"])
     ]
@@ -885,8 +887,8 @@ def build_records() -> pd.DataFrame:
 
     a = AWARDS.copy()
     a["record_type"] = "award"
-    a["record_id"] = a["award_id_piid"]
-    a["display_id"] = a["award_id_piid"]
+    a["record_id"] = a["award_id_piid"]  # unique award key (== the award id unless the id was reused)
+    a["display_id"] = a["award_piid"]
     a["company_name"] = a["recipient_name"]
     a["company_key"] = a["entity_key"]
     a["prime_name"] = ""
@@ -1254,7 +1256,7 @@ def build_record_detail(record_type: str, record_id: str):
             {
                 "title": "Award",
                 "fields": [
-                    _field("Award ID (PIID)", a["award_id_piid"]),
+                    _field("Award ID (PIID)", a["award_piid"]),
                     {**_field("Parent Award ID (Vehicle)", a["parent_award_id_piid"]),
                      "href": (url_for("vehicle_detail_view", token=encode_key(str(a["parent_award_id_piid"])))
                               if a["parent_award_id_piid"] not in (None, "", "nan") and not pd.isna(a["parent_award_id_piid"]) else None)},
@@ -1318,7 +1320,7 @@ def build_record_detail(record_type: str, record_id: str):
             "record_type": "award",
             "record_id": record_id,
             "type_label": "Direct Award",
-            "title": a["award_id_piid"],
+            "title": a["award_piid"],
             "description": description,
             "models": extract_models(description),
             "amount": a["total_federal_action_obligation"],
@@ -1340,7 +1342,7 @@ def build_record_detail(record_type: str, record_id: str):
         related = None
         if s["matched_award_id_piid"]:
             related = {
-                "label": f"Prime award {s['matched_award_id_piid']} is in our direct-award dataset",
+                "label": f"Prime award {str(s['matched_award_id_piid']).split('~')[0]} is in our direct-award dataset",
                 "url": record_url("award", s["matched_award_id_piid"]),
             }
 
@@ -1527,7 +1529,7 @@ def build_vehicle_detail(vehicle_id: str):
         .reset_index().sort_values("total", ascending=False)
     )
     offices["url"] = offices["awarding_office_code"].astype(str).apply(encode_key)
-    subs = SUBAWARDS[SUBAWARDS["prime_award_piid"].isin(orders["record_id"])]
+    subs = SUBAWARDS[SUBAWARDS["matched_award_id_piid"].isin(orders["record_id"])]
     return {
         "id": vehicle_id,
         "orders": len(orders),

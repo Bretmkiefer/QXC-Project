@@ -27,6 +27,46 @@ SUBAWARDS_CSV = ROOT / "data" / "raw" / "subawards_checkpoint_1.csv"
 DB_PATH = ROOT / "db" / "qxc.db"
 
 
+def assign_award_keys(df: pd.DataFrame) -> pd.Series:
+    """One unique key per distinct award.
+
+    An award id (PIID) is not unique across the source: the same id is
+    sometimes issued to different companies under different parent contracts
+    (about a dozen cases). Rows belong to the same award when they share the
+    PIID, the recipient and the parent contract; later modifications of one
+    award carry the same three. A row with a blank parent joins the
+    recipient's only parent.
+
+    The first award seen (in file order) keeps the plain PIID as its key and
+    any further awards get PIID~2, PIID~3, ... This keeps every existing
+    record id unchanged, and because the source file only ever grows by
+    appending, an award's key never changes later.
+    """
+    piid = df["award_id_piid"].astype(str)
+    uei = df["recipient_uei"].fillna("").astype(str).str.upper().str.strip()
+    parent = df["parent_award_id_piid"].fillna("").astype(str).str.strip()
+    keys = piid.copy()
+    for p, idx in df.groupby(piid, sort=False).groups.items():
+        if len(idx) < 2:
+            continue
+        # a blank parent joins the only non-blank parent seen for that recipient
+        parents_by_uei = {}
+        for i in idx:
+            if parent[i]:
+                parents_by_uei.setdefault(uei[i], []).append(parent[i])
+        ordinals, assigned = {}, []
+        for i in idx:  # idx is in file order
+            par = parent[i] or (parents_by_uei.get(uei[i]) or [""])[0]
+            ident = (uei[i], par)
+            if ident not in ordinals:
+                ordinals[ident] = len(ordinals) + 1
+            assigned.append(ordinals[ident])
+        if len(ordinals) > 1:
+            for i, n in zip(idx, assigned):
+                keys[i] = p if n == 1 else f"{p}~{n}"
+    return keys
+
+
 def load_awards() -> pd.DataFrame:
     cols = [
         "award_id_piid",
@@ -76,7 +116,11 @@ def load_awards() -> pd.DataFrame:
     df["period_of_performance_start_date"] = pd.to_datetime(
         df["period_of_performance_start_date"], errors="coerce"
     )
-    df = df.dropna(subset=["award_id_piid"])
+    df = df.dropna(subset=["award_id_piid"]).reset_index(drop=True)
+    # award_id_piid becomes the unique award key (see assign_award_keys);
+    # award_piid keeps the real award id for display and exports.
+    df["award_piid"] = df["award_id_piid"]
+    df["award_id_piid"] = assign_award_keys(df)
     df = df.sort_values("action_date")
 
     grouped = df.groupby("award_id_piid", as_index=False)
@@ -118,7 +162,7 @@ def load_awards() -> pd.DataFrame:
     return awards
 
 
-def load_subawards(matched_award_ids: set) -> pd.DataFrame:
+def load_subawards(awards: pd.DataFrame) -> pd.DataFrame:
     cols = [
         "prime_award_piid",
         "prime_award_amount",
@@ -161,9 +205,7 @@ def load_subawards(matched_award_ids: set) -> pd.DataFrame:
             "prime_award_period_of_performance_start_date": "period_of_performance_start_date",
         }
     )
-    df["matched_award_id_piid"] = df["prime_award_piid"].where(
-        df["prime_award_piid"].isin(matched_award_ids)
-    )
+    df["matched_award_id_piid"] = match_prime_awards(df, awards)
     df["period_of_performance_start_date"] = pd.to_datetime(
         df["period_of_performance_start_date"], errors="coerce"
     ).dt.strftime("%Y-%m-%d")
@@ -183,10 +225,29 @@ def load_subawards(matched_award_ids: set) -> pd.DataFrame:
     return df
 
 
+def match_prime_awards(subs: pd.DataFrame, awards: pd.DataFrame) -> pd.Series:
+    """Award key of each subaward's prime award, or None when it is not in
+    our direct-award data. Where an award id was reused by several companies,
+    the subaward's prime awardee picks the right one."""
+    by_piid, by_piid_uei = {}, {}
+    for key, piid, uei in zip(awards["award_id_piid"], awards["award_piid"], awards["recipient_uei"].fillna("")):
+        by_piid.setdefault(piid, []).append(key)
+        by_piid_uei[(piid, str(uei).upper().strip())] = key
+
+    def match(piid, uei):
+        hit = by_piid_uei.get((piid, str(uei).upper().strip()) if isinstance(uei, str) else (piid, ""))
+        if hit:
+            return hit
+        keys = by_piid.get(piid)
+        return keys[0] if keys and len(keys) == 1 else None  # ambiguous id: don't guess
+
+    return pd.Series([match(p, u) for p, u in zip(subs["prime_award_piid"], subs["prime_awardee_uei"])], index=subs.index)
+
+
 def main():
     DB_PATH.parent.mkdir(exist_ok=True)
     awards = load_awards()
-    subawards = load_subawards(set(awards["award_id_piid"]))
+    subawards = load_subawards(awards)
 
     with sqlite3.connect(DB_PATH) as conn:
         awards.to_sql("awards", conn, if_exists="replace", index=False)

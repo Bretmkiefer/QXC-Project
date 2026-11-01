@@ -59,12 +59,19 @@ new export file(s)  ->  scripts/refresh_data.py  ->  two CSVs in the cloud bucke
   row exactly, worth about $7.9M. The database build now drops these (keeping
   the first, so ids are stable). Subaward total went from $320.3M to $312.4M
   and the count from 799 to 778.
-- **Award ids are not always unique.** 14 award ids are reused by different
-  companies/parent contracts, mostly at one health agency (about $16.9M).
-  The app treats an award id as one award, so those get combined under the
-  first company. Nothing a user entered is attached to them today. A real fix
-  needs a new record identity (award id + parent + company) and a migration
-  of stored notes/links, so it is deliberately not part of a refresh.
+- **Award ids are not always unique (handled).** 14 award ids are reused by
+  different companies under different parent contracts, mostly at one health
+  agency (about $16.9M). The build now treats rows as one award only when they
+  share the award id, the recipient and the parent contract (a blank parent
+  joins the recipient's only parent), so each company's award is its own
+  record: 5,147 awards became 5,164, with dollars unchanged to the cent.
+  The first award seen in the file keeps the plain id as its record key and
+  later ones become `ID~2`, `ID~3`, so no existing record id changed. Screens
+  and exports always show the real award id, never the `~` key. Because the
+  source only grows by appending, an award's key does not change on a
+  refresh. Limit: if an award's company genuinely changes mid-life (a
+  novation), the data cannot tell that apart from a reused id and it will be
+  split into two records.
 - Offices can change across the life of an award, so one award id can show
   more than one awarding office code. This is expected, not a duplicate.
 
