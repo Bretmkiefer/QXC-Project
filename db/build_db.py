@@ -167,7 +167,19 @@ def load_subawards(matched_award_ids: set) -> pd.DataFrame:
     df["period_of_performance_start_date"] = pd.to_datetime(
         df["period_of_performance_start_date"], errors="coerce"
     ).dt.strftime("%Y-%m-%d")
+    # Ids come from the row's position in the file, assigned BEFORE duplicates
+    # are dropped, so every kept row keeps the id it always had (notes and
+    # links refer to these ids).
     df.insert(0, "subaward_id", [f"sub-{i}" for i in range(len(df))])
+
+    # The same subaward can appear twice in the source (identical prime,
+    # subaward number, subawardee, date and amount). Keep the first so its
+    # dollars are not counted twice.
+    dup_key = ["prime_award_piid", "subaward_number", "subawardee_uei", "subaward_action_date", "subaward_amount"]
+    before = len(df)
+    df = df.drop_duplicates(subset=dup_key, keep="first")
+    if len(df) != before:
+        print(f"build_db: dropped {before - len(df)} duplicate subaward rows")
     return df
 
 

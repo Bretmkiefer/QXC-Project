@@ -287,6 +287,7 @@ def format_phone(raw) -> str:
 
 # Model numbers, equipment type and purchase category are text heuristics
 # (there is no structured SKU/line-item field in the data); see classify.py.
+import assistant  # noqa: E402
 from classify import (  # noqa: E402
     CATEGORIES, EQUIPMENT_TYPES, classify_category, classify_equipment, extract_models,
 )
@@ -2326,6 +2327,97 @@ def awardees_view(key_token):
         contacts=contacts,
         active="awardees",
     )
+
+
+# --------------------------------------------------------- AI assistant (off) --
+# Read-only lookups the assistant may call. Nothing here writes, and no
+# source fields are ever included. See assistant.py and docs/ai-assistant-plan.md.
+
+_ASSISTANT_GROUPS = {
+    "agency": "awarding_agency_name", "year": "year", "category": "categories",
+    "equipment": "equipment", "award_type": "award_type", "company": "company_name",
+}
+
+
+_ASSISTANT_FILTER_KEYS = {"q", "agency", "department", "company", "year", "amount_min", "amount_max",
+                          "category", "equipment", "model"}
+
+
+def _assistant_filtered(**kw):
+    from werkzeug.datastructures import MultiDict
+
+    unknown = set(kw) - _ASSISTANT_FILTER_KEYS
+    if unknown:
+        raise TypeError(f"unknown filter(s): {', '.join(sorted(unknown))}")
+    args = MultiDict({k: str(v) for k, v in kw.items() if v not in (None, "")})
+    return filter_records(**parse_record_filters(args))
+
+
+def assistant_search_records(**kw) -> dict:
+    df = _assistant_filtered(**kw)
+    rows = [
+        {
+            "record_id": r["display_id"], "type": r["record_type"], "company": r["company_name"],
+            "amount": round(float(r["amount"]), 2), "date": r["action_date"],
+            "office": r["awarding_office_name"], "agency": r["awarding_agency_name"],
+            "description": (r["description"] or "")[:200], "category": r["category_str"],
+            "equipment": r["equipment_str"], "models": r["models_str"], "vehicle": r["parent_award_id"],
+        }
+        for r in df.head(assistant.MAX_ROWS).to_dict("records")
+    ]
+    return {"total_matches": int(len(df)), "returned": len(rows), "records": rows}
+
+
+def assistant_summarize(group_by: str, **kw) -> dict:
+    col = _ASSISTANT_GROUPS.get(group_by)
+    if col is None:
+        return {"error": f"group_by must be one of {sorted(_ASSISTANT_GROUPS)}"}
+    df = _assistant_filtered(**kw)
+    if col in ("categories", "equipment"):
+        df = df.explode(col)
+    g = (
+        df.groupby(col, dropna=False)["amount"].agg(["count", "sum"]).reset_index()
+        .sort_values("sum", ascending=False).head(25)
+    )
+    return {"group_by": group_by, "groups": [
+        {"value": str(r[col]), "records": int(r["count"]), "total": round(float(r["sum"]), 2)} for r in g.to_dict("records")
+    ]}
+
+
+def assistant_get_vehicle(vehicle_id: str) -> dict:
+    d = build_vehicle_detail(vehicle_id)
+    if d is None:
+        return {"error": "no such vehicle"}
+    return {
+        "vehicle": d["id"], "orders": d["orders"], "total": round(d["total"], 2), "first": d["first"], "last": d["last"],
+        "resellers": [{"name": r["company_name"], "orders": r["orders"], "total": round(float(r["total"]), 2)} for r in d["resellers"][:10]],
+        "offices": [{"name": o["awarding_office_name"], "orders": o["orders"], "total": round(float(o["total"]), 2)} for o in d["offices"][:10]],
+    }
+
+
+assistant.init(assistant_search_records, assistant_summarize, assistant_get_vehicle)
+
+
+@app.post("/api/assistant")
+def api_assistant():
+    """Disabled (404) unless QXC_ASSISTANT_ENABLED=1 and OPENROUTER_API_KEY is set."""
+    if not assistant.enabled():
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    message = (payload.get("message") or "").strip() if isinstance(payload.get("message"), str) else ""
+    if not message or len(message) > 2000:
+        return jsonify(error="message is required (max 2000 characters)"), 400
+    # History comes from the browser, so only plain user/assistant text is accepted.
+    history = [
+        {"role": m["role"], "content": m["content"][:4000]}
+        for m in (payload.get("history") or [])[-10:]
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
+    ]
+    try:
+        return jsonify(reply=assistant.chat(message, history=history)["reply"])
+    except Exception:
+        app.logger.exception("assistant call failed")
+        return jsonify(error="The assistant is unavailable right now."), 502
 
 
 if __name__ == "__main__":
