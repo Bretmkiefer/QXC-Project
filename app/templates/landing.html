@@ -7,6 +7,7 @@
     <h1 class="hero-title">Cisco Equipment Intelligence</h1>
     <p class="hero-sub">Federal direct-award and subaward data for Cisco networking equipment, rolled up by agency &mdash; with how much of it you've reviewed so far.</p>
 
+    {% if data_through %}<p class="hero-updated">Data through {{ data_through }}{% if data_built %} &middot; rebuilt {{ data_built }}{% endif %}</p>{% endif %}
     <form method="get" action="{{ url_for('records_view') }}" class="hero-search">
       <input type="text" name="q" placeholder="Search companies, offices, contract descriptions&hellip;">
       <button type="submit">Search Records</button>

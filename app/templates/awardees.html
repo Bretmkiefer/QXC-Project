@@ -142,6 +142,30 @@
             {% if not selected.direct_rows %}<div class="empty-state">No direct awards &mdash; this company only appears as a subawardee below.</div>{% endif %}
           </div>
 
+          {% if selected.vehicles %}
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Contract Vehicles &mdash; Where This Company Sells</h2>
+              <span class="count">{{ selected.vehicles|length }} vehicles</span>
+            </div>
+            <div class="table-scroll">
+            <table>
+              <thead><tr><th>Vehicle (Parent Award)</th><th class="num">Orders</th><th class="num">Offices</th><th class="num">Obligated</th></tr></thead>
+              <tbody>
+                {% for v in selected.vehicles %}
+                <tr class="clickable" onclick="window.location='{{ url_for('vehicle_detail_view', token=v.url) }}'">
+                  <td class="name-cell"><div class="primary">{{ v.parent_award_id }}</div></td>
+                  <td class="num">{{ v.orders }}</td>
+                  <td class="num">{{ v.offices }}</td>
+                  <td class="num">{{ v.total|money }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+          {% endif %}
+
           <div class="panel">
             <div class="panel-header">
               <h2>Subcontracted Work &mdash; Performed as a Subawardee</h2>

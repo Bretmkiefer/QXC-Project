@@ -63,7 +63,7 @@
   <div class="detail-group-card">
     <div class="detail-group-title">{{ group.title }}</div>
     {% for f in group.fields %}
-    <div class="detail-field"><span class="label">{{ f.label }}</span><span class="value">{{ f.value }}</span></div>
+    <div class="detail-field"><span class="label">{{ f.label }}</span><span class="value">{% if f.href %}<a href="{{ f.href }}">{{ f.value }}</a>{% else %}{{ f.value }}{% endif %}</span></div>
     {% endfor %}
   </div>
   {% endfor %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Vehicles{% endblock %}
+{% block content %}
+<div class="section-head" style="border-bottom:none;">
+  <h1 class="page-title">Contract Vehicles</h1>
+  <p class="page-desc">The parent contracts that orders are placed against, with the resellers selling on each and the offices buying from it. Open a vehicle to see who sells on it and who buys from it.</p>
+
+  <form method="get" action="{{ url_for('vehicles_view') }}" class="filter-bar">
+    <div class="filter-field grow">
+      <label>Search</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="Vehicle ID or reseller name&hellip;">
+    </div>
+    <button type="submit" class="btn-primary">Search</button>
+    {% if q %}<a class="btn-reset" href="{{ url_for('vehicles_view') }}">Reset</a>{% endif %}
+  </form>
+
+  <div class="stat-row">
+    <div class="stat-tile"><div class="label">Vehicles</div><div class="value">{{ total_vehicles }}</div></div>
+    <div class="stat-tile"><div class="label">Orders</div><div class="value">{{ total_orders }}</div></div>
+    <div class="stat-tile"><div class="label">Obligated</div><div class="value accent">{{ total_amount|money }}</div></div>
+  </div>
+  {% if total_vehicles > shown %}<p class="note-text">Showing the top {{ shown }} of {{ total_vehicles }} vehicles by dollars &mdash; search to narrow.</p>{% endif %}
+</div>
+
+<div style="padding:0 32px 24px;">
+  <div class="panel">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle (Parent Award)</th>
+            <th>Largest Reseller</th>
+            <th class="num">Resellers</th>
+            <th class="num">Offices</th>
+            <th class="num">Orders</th>
+            <th>Activity</th>
+            <th class="num">Obligated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in rows %}
+          <tr class="clickable" onclick="window.location='{{ url_for('vehicle_detail_view', token=v.url) }}'">
+            <td class="name-cell"><div class="primary">{{ v.parent_award_id }}</div><div class="secondary">{{ v.agencies }} agenc{{ 'y' if v.agencies == 1 else 'ies' }}</div></td>
+            <td>{{ v.top_reseller or "—" }}</td>
+            <td class="num">{{ v.resellers }}</td>
+            <td class="num">{{ v.offices }}</td>
+            <td class="num">{{ v.orders }}</td>
+            <td class="record-row-date">{{ v.first or "—" }} &rarr; {{ v.last or "—" }}</td>
+            <td class="num">{{ v.total|money }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not rows %}<div class="empty-state">No vehicles match.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

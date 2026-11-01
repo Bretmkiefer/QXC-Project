@@ -12,6 +12,9 @@ so browsing feels like one continuous screen rather than list -> detail page
 jumps.
 """
 import base64
+import csv
+import datetime
+import io
 import json
 import os
 import re
@@ -99,6 +102,8 @@ def inject_auth():
         "auth_user": getattr(g, "auth_user", None),
         "auth_role": getattr(g, "auth_role", "edit"),
         "show_sources": SHOW_SOURCES,
+        "data_through": DATA_VINTAGE["through"],
+        "data_built": DATA_VINTAGE["built"],
     }
 
 
@@ -280,40 +285,11 @@ def format_phone(raw) -> str:
     return str(raw).strip()
 
 
-# There's no structured SKU/model/quantity field anywhere in either source
-# file (checked directly against the raw CSV headers) - Kyle's scope doc
-# already flags identifying specific Cisco products/SKUs as something to
-# work out later, not data we're handed. This regex is a best-effort pull of
-# recognizable Cisco model numbers out of the free-text descriptions where
-# they happen to be spelled out - it catches ~1 in 14 description rows, not
-# a complete inventory, and doesn't attempt quantity at all (a similar
-# sweep for "QTY 5" / "5 X ..." patterns hit a lot of false positives and
-# covered under 2% of rows, too unreliable to present as real data).
-MODEL_PATTERN = re.compile(
-    r"\b("
-    r"(?:Catalyst|Nexus)\s?[0-9]{3,4}[A-Z0-9\-]*"
-    r"|C9[0-9]{3}[A-Z0-9\-]*"
-    r"|WS-C[0-9]{4}[A-Z0-9\-]*"
-    r"|N9K-[A-Z0-9\-]+"
-    r"|Firepower\s?[0-9]{3,4}[A-Z0-9\-]*"
-    r"|ASA\s?5[0-9]{3}[A-Z0-9\-]*"
-    r"|ISR\s?4[0-9]{3}[A-Z0-9\-]*"
-    r"|ASR\s?1[0-9]{3}[A-Z0-9\-]*"
-    r"|Meraki\s?[A-Z]{2}[0-9]{2,3}[A-Z0-9\-]*"
-    r")\b",
-    re.IGNORECASE,
+# Model numbers, equipment type and purchase category are text heuristics
+# (there is no structured SKU/line-item field in the data); see classify.py.
+from classify import (  # noqa: E402
+    CATEGORIES, EQUIPMENT_TYPES, classify_category, classify_equipment, extract_models,
 )
-
-
-def extract_models(text) -> list:
-    if not text or (isinstance(text, float) and pd.isna(text)):
-        return []
-    seen = []
-    for m in MODEL_PATTERN.findall(str(text)):
-        norm = re.sub(r"\s+", " ", m).strip().upper()
-        if norm not in seen:
-            seen.append(norm)
-    return seen
 
 
 # ---------------------------------------------------- read/write storage --
@@ -951,10 +927,40 @@ def build_records() -> pd.DataFrame:
     records["company_url"] = records["company_key"].apply(encode_key)
     records["models"] = records["description"].apply(extract_models)
     records["models_str"] = records["models"].apply(lambda m: ", ".join(m))
+
+    # Purchase-type fields used by the filters and the CSV export.
+    records["award_type"] = pd.concat(
+        [a["award_type"].fillna("").astype(str).str.title(), s["subaward_type"].fillna("").astype(str).str.title()],
+        ignore_index=True,
+    ).str.replace("Bpa", "BPA")
+    records["parent_award_id"] = pd.concat(
+        [a["parent_award_id_piid"].fillna("").astype(str), pd.Series([""] * len(s))], ignore_index=True
+    )
+    records["year"] = pd.to_datetime(records["action_date"], errors="coerce", format="mixed").dt.year
+    records["categories"] = [
+        classify_category(d, p, pd_)
+        for d, p, pd_ in zip(records["description"], records["psc_code"], records["psc_description"])
+    ]
+    records["category_str"] = records["categories"].apply(" + ".join)
+    records["equipment"] = [classify_equipment(d, m) for d, m in zip(records["description"], records["models"])]
+    records["equipment_str"] = records["equipment"].apply(", ".join)
     return records
 
 
 RECORDS = build_records()
+
+
+def _data_vintage() -> dict:
+    """When the data runs through and (on a hosted build) when it was rebuilt."""
+    latest = pd.to_datetime(RECORDS["action_date"], errors="coerce", format="mixed").max()
+    built = (BUILD_INFO.get("built_at") or "")[:10]
+    return {
+        "through": latest.strftime("%b %d, %Y").replace(" 0", " ") if pd.notna(latest) else "",
+        "built": built,
+    }
+
+
+DATA_VINTAGE = _data_vintage()
 
 
 def money(v) -> str:
@@ -1072,7 +1078,9 @@ def build_agency_rows(role: str, sort: str = "combined"):
 
 def filter_records(role: str, agency: str = None, department: str = None, company_q: str = None,
                     prime_q: str = None, uei_q: str = None, cage_q: str = None, psc_q: str = None,
-                    q: str = None, enrichment_only: bool = False):
+                    q: str = None, enrichment_only: bool = False, year: int = None,
+                    amount_min: float = None, amount_max: float = None, award_type: str = None,
+                    model_q: str = None, category: str = None, equipment: str = None):
     agency_c = f"{role}_agency_name"
     sub_agency_c = f"{role}_sub_agency_name"
     office_c = f"{role}_office_name"
@@ -1116,6 +1124,21 @@ def filter_records(role: str, agency: str = None, department: str = None, compan
             | df[agency_c].fillna("").str.lower().str.contains(ql, na=False)
         )
         df = df[mask]
+    if year is not None:
+        df = df[df["year"] == year]
+    if amount_min is not None:
+        df = df[df["amount"] >= amount_min]
+    if amount_max is not None:
+        df = df[df["amount"] <= amount_max]
+    if award_type:
+        df = df[df["award_type"] == award_type]
+    if model_q:
+        ql = model_q.strip().lower()
+        df = df[df["models_str"].fillna("").str.lower().str.contains(ql, regex=False, na=False)]
+    if category:
+        df = df[df["categories"].apply(lambda labels: category in labels)]
+    if equipment:
+        df = df[df["equipment"].apply(lambda labels: equipment in labels)]
     if enrichment_only:
         targets = get_enrichment_set()
         keep = pd.Series(
@@ -1231,7 +1254,9 @@ def build_record_detail(record_type: str, record_id: str):
                 "title": "Award",
                 "fields": [
                     _field("Award ID (PIID)", a["award_id_piid"]),
-                    _field("Parent Award ID", a["parent_award_id_piid"]),
+                    {**_field("Parent Award ID (Vehicle)", a["parent_award_id_piid"]),
+                     "href": (url_for("vehicle_detail_view", token=encode_key(str(a["parent_award_id_piid"])))
+                              if a["parent_award_id_piid"] not in (None, "", "nan") and not pd.isna(a["parent_award_id_piid"]) else None)},
                     _field("Award Type", a["award_type"]),
                     _field("Contract Pricing Type", a["type_of_contract_pricing_code"]),
                     _field(
@@ -1446,6 +1471,116 @@ def build_contact_detail(contact_id):
     }
 
 
+# ------------------------------------------------------- contract vehicles --
+# A "vehicle" is the parent contract (IDV/BPA/GWAC) an order was placed against.
+# Orders carry the parent's id, so we can show which vehicles the money flows
+# through, which resellers sell on them, and which offices buy from them.
+
+VEHICLE_ORDERS = RECORDS[(RECORDS["record_type"] == "award") & (RECORDS["parent_award_id"] != "")].copy()
+
+
+def build_vehicle_rows(q: str = None) -> list:
+    g = VEHICLE_ORDERS
+    if g.empty:
+        return []
+    top = (
+        g.groupby(["parent_award_id", "company_name"])["amount"].sum().reset_index()
+        .sort_values("amount", ascending=False).drop_duplicates("parent_award_id")
+        .set_index("parent_award_id")["company_name"]
+    )
+    rows = (
+        g.groupby("parent_award_id")
+        .agg(orders=("record_id", "nunique"), resellers=("company_key", "nunique"),
+             offices=("awarding_office_code", "nunique"), agencies=("awarding_agency_name", "nunique"),
+             total=("amount", "sum"), first=("action_date", "min"), last=("action_date", "max"))
+        .reset_index()
+    )
+    rows["top_reseller"] = rows["parent_award_id"].map(top)
+    if q:
+        ql = q.strip().lower()
+        names = g.groupby("parent_award_id")["company_name"].apply(lambda s: " ".join(s.dropna().unique()).lower())
+        keep = rows["parent_award_id"].str.lower().str.contains(ql, regex=False) | rows["parent_award_id"].map(names).fillna("").str.contains(ql, regex=False)
+        rows = rows[keep]
+    rows = rows.sort_values("total", ascending=False)
+    out = rows.to_dict("records")
+    for r in out:
+        r["url"] = encode_key(r["parent_award_id"])
+    return out
+
+
+def build_vehicle_detail(vehicle_id: str):
+    orders = VEHICLE_ORDERS[VEHICLE_ORDERS["parent_award_id"] == vehicle_id]
+    if orders.empty:
+        return None
+    resellers = (
+        orders.groupby(["company_key", "company_name"])
+        .agg(orders=("record_id", "nunique"), total=("amount", "sum"),
+             offices=("awarding_office_code", "nunique"))
+        .reset_index().sort_values("total", ascending=False)
+    )
+    resellers["url"] = resellers["company_key"].apply(encode_key)
+    offices = (
+        orders.groupby(["awarding_office_code", "awarding_office_name", "awarding_agency_name"])
+        .agg(orders=("record_id", "nunique"), total=("amount", "sum"),
+             resellers=("company_key", "nunique"))
+        .reset_index().sort_values("total", ascending=False)
+    )
+    offices["url"] = offices["awarding_office_code"].astype(str).apply(encode_key)
+    subs = SUBAWARDS[SUBAWARDS["prime_award_piid"].isin(orders["record_id"])]
+    return {
+        "id": vehicle_id,
+        "orders": len(orders),
+        "total": float(orders["amount"].sum()),
+        "first": orders["action_date"].min(),
+        "last": orders["action_date"].max(),
+        "resellers": resellers.to_dict("records"),
+        "offices": offices.to_dict("records"),
+        "order_rows": orders.sort_values("amount", ascending=False).head(300).to_dict("records"),
+        "orders_truncated": len(orders) > 300,
+        "subawards": subs.to_dict("records"),
+        "agencies": sorted(a for a in orders["awarding_agency_name"].dropna().unique() if a),
+    }
+
+
+def vehicles_for_company(company_key: str) -> list:
+    o = VEHICLE_ORDERS[VEHICLE_ORDERS["company_key"] == company_key]
+    if o.empty:
+        return []
+    rows = (
+        o.groupby("parent_award_id")
+        .agg(orders=("record_id", "nunique"), total=("amount", "sum"), offices=("awarding_office_code", "nunique"))
+        .reset_index().sort_values("total", ascending=False)
+    )
+    out = rows.to_dict("records")
+    for r in out:
+        r["url"] = encode_key(r["parent_award_id"])
+    return out
+
+
+@app.route("/vehicles")
+def vehicles_view():
+    q = request.args.get("q") or None
+    rows = build_vehicle_rows(q)
+    return render_template(
+        "vehicles.html",
+        rows=rows[:300],
+        shown=min(len(rows), 300),
+        total_vehicles=len(rows),
+        total_orders=int(sum(r["orders"] for r in rows)),
+        total_amount=float(sum(r["total"] for r in rows)),
+        q=q or "",
+        active="vehicles",
+    )
+
+
+@app.route("/vehicles/<token>")
+def vehicle_detail_view(token):
+    d = build_vehicle_detail(decode_key(token))
+    if d is None:
+        abort(404)
+    return render_template("vehicle_detail.html", v=d, token=token, active="vehicles")
+
+
 # ---------------------------------------------------------------- offices --
 
 def build_offices_rows(role: str):
@@ -1637,24 +1772,58 @@ def index():
     )
 
 
-@app.route("/records")
-def records_view():
-    role = request.args.get("role", "awarding")
+def _to_number(raw):
+    """Parse "$1,500" to 1500.0; blank or unparseable gives None (filter ignored)."""
+    try:
+        return float(str(raw).replace("$", "").replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_record_filters(args) -> dict:
+    """Query-string filters shared by the records page and the CSV export,
+    returned as keyword arguments for filter_records."""
+    role = args.get("role", "awarding")
     if role not in ROLES:
         abort(404)
-    agency = request.args.get("agency") or None
-    department = request.args.get("department") or None
-    company_q = request.args.get("company") or None
-    prime_q = request.args.get("prime") or None
-    uei_q = request.args.get("uei") or None
-    cage_q = request.args.get("cage") or None
-    psc_q = request.args.get("psc") or None
-    q = request.args.get("q") or None
-    enrichment_only = request.args.get("enrichment") == "1"
+    category = args.get("category") or None
+    equipment = args.get("equipment") or None
+    return {
+        "role": role,
+        "agency": args.get("agency") or None,
+        "department": args.get("department") or None,
+        "company_q": args.get("company") or None,
+        "prime_q": args.get("prime") or None,
+        "uei_q": args.get("uei") or None,
+        "cage_q": args.get("cage") or None,
+        "psc_q": args.get("psc") or None,
+        "q": args.get("q") or None,
+        "enrichment_only": args.get("enrichment") == "1",
+        "year": args.get("year", type=int),
+        "amount_min": _to_number(args.get("amount_min")),
+        "amount_max": _to_number(args.get("amount_max")),
+        "award_type": args.get("award_type") or None,
+        "model_q": args.get("model") or None,
+        "category": category if category in CATEGORIES else None,
+        "equipment": equipment if equipment in EQUIPMENT_TYPES else None,
+    }
 
-    df = filter_records(role, agency=agency, department=department, company_q=company_q,
-                         prime_q=prime_q, uei_q=uei_q, cage_q=cage_q, psc_q=psc_q, q=q,
-                         enrichment_only=enrichment_only)
+
+def active_filter_args(args) -> dict:
+    """The non-empty query args to carry into links such as the export."""
+    keys = ("role", "agency", "department", "company", "prime", "uei", "cage", "psc", "q", "enrichment",
+            "year", "amount_min", "amount_max", "award_type", "model", "category", "equipment")
+    return {k: args.get(k) for k in keys if args.get(k)}
+
+
+@app.route("/records")
+def records_view():
+    f = parse_record_filters(request.args)
+    role, agency, department = f["role"], f["agency"], f["department"]
+    company_q, prime_q, uei_q, cage_q, psc_q, q = f["company_q"], f["prime_q"], f["uei_q"], f["cage_q"], f["psc_q"], f["q"]
+    enrichment_only = f["enrichment_only"]
+
+    df = filter_records(**f)
     viewed = get_viewed_set()
     enrichment_set = get_enrichment_set()
 
@@ -1692,10 +1861,91 @@ def records_view():
         psc_q=psc_q,
         enrichment_only=enrichment_only,
         q=q,
+        year=f["year"],
+        amount_min=request.args.get("amount_min", ""),
+        amount_max=request.args.get("amount_max", ""),
+        award_type=f["award_type"],
+        model_q=f["model_q"],
+        category=f["category"],
+        equipment=f["equipment"],
+        year_options=sorted(int(y) for y in RECORDS["year"].dropna().unique()),
+        award_type_options=sorted(v for v in RECORDS["award_type"].unique() if v),
+        category_options=CATEGORIES,
+        equipment_options=EQUIPMENT_TYPES,
+        export_args=active_filter_args(request.args),
         agency_names=agency_names,
         dept_names=department_options(role, agency),
         active="records",
     )
+
+
+# Columns of the CSV export, in order: (header, record field or a callable).
+EXPORT_COLUMNS = [
+    ("Record Type", lambda r: "Direct Award" if r["record_type"] == "award" else "Subaward"),
+    ("Record ID", "display_id"),
+    ("Company", "company_name"),
+    ("Prime Contractor (subawards)", "prime_name"),
+    ("Amount (USD)", None),  # numeric, written separately so it is never quote-prefixed
+    ("Action Date", "action_date"),
+    ("Year", "year"),
+    ("Service Start", "service_start"),
+    ("Award Type", "award_type"),
+    ("Vehicle (Parent Award)", "parent_award_id"),
+    ("Purchase Category", "category_str"),
+    ("Equipment", "equipment_str"),
+    ("Model Numbers", "models_str"),
+    ("Description", "description"),
+    ("Awarding Agency", "awarding_agency_name"),
+    ("Awarding Sub-Agency", "awarding_sub_agency_name"),
+    ("Awarding Office", "awarding_office_name"),
+    ("Funding Agency", "funding_agency_name"),
+    ("Funding Sub-Agency", "funding_sub_agency_name"),
+    ("Funding Office", "funding_office_name"),
+    ("PSC Code", "psc_code"),
+    ("PSC Description", "psc_description"),
+    ("Company UEI", "company_uei"),
+    ("Prime UEI", "prime_uei"),
+    ("CAGE", "cage_code"),
+    ("Contact Phone", "contact_phone"),
+]
+
+
+def _csv_text(value) -> str:
+    """Text cell safe to open in a spreadsheet: a leading = + - @ would be run
+    as a formula, so those cells get a leading apostrophe."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    text = str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+@app.route("/records/export.csv")
+def records_export():
+    """Every record matching the same filters as the Search Records page
+    (not capped at the 250 shown on screen)."""
+    df = filter_records(**parse_record_filters(request.args))
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow([header for header, _ in EXPORT_COLUMNS])
+    for r in df.to_dict("records"):
+        row = []
+        for header, field in EXPORT_COLUMNS:
+            if header == "Amount (USD)":
+                row.append("" if pd.isna(r["amount"]) else f"{r['amount']:.2f}")
+            elif header == "Year":
+                row.append("" if pd.isna(r["year"]) else int(r["year"]))
+            elif callable(field):
+                row.append(_csv_text(field(r)))
+            else:
+                row.append(_csv_text(r.get(field)))
+        writer.writerow(row)
+    # BOM so Excel opens it as UTF-8 rather than guessing a code page.
+    resp = Response("\ufeff" + out.getvalue(), mimetype="text/csv")
+    resp.headers["Content-Disposition"] = (
+        f'attachment; filename="qxc-records-{datetime.date.today().isoformat()}.csv"'
+    )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/records/<record_type>/<record_id>/viewed", methods=["POST"])
@@ -2062,6 +2312,7 @@ def awardees_view(key_token):
         note_token = encode_key(key)
         notes = get_notes("awardee", key)
         contacts = get_contacts_for_entity(key)
+        selected["vehicles"] = vehicles_for_company(key)
 
     return render_template(
         "awardees.html",

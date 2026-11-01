@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ v.id }}{% endblock %}
+{% block content %}
+<div class="record-detail-header">
+  <div class="crumbs"><a href="{{ url_for('index') }}">Home</a> / <a href="{{ url_for('vehicles_view') }}">Vehicles</a> / {{ v.id }}</div>
+  <div class="record-detail-top">
+    <div>
+      <h1 class="record-detail-title">{{ v.id }}</h1>
+      <div class="record-detail-meta">Contract vehicle &middot; {{ v.agencies|join(", ")|truncate(120) if v.agencies else "—" }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="stat-row" style="padding:0 32px 20px;">
+  <div class="stat-tile"><div class="label">Resellers</div><div class="value">{{ v.resellers|length }}</div></div>
+  <div class="stat-tile"><div class="label">Offices</div><div class="value">{{ v.offices|length }}</div></div>
+  <div class="stat-tile"><div class="label">Orders</div><div class="value">{{ v.orders }}</div></div>
+  <div class="stat-tile"><div class="label">Obligated</div><div class="value accent">{{ v.total|money }}</div></div>
+  <div class="stat-tile"><div class="label">First Action</div><div class="value">{{ v.first or "—" }}</div></div>
+  <div class="stat-tile"><div class="label">Last Action</div><div class="value">{{ v.last or "—" }}</div></div>
+</div>
+
+<div style="padding:0 32px 24px;">
+  <div class="panel">
+    <div class="panel-header"><h2>Resellers Selling on this Vehicle</h2><span class="count">{{ v.resellers|length }}</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Reseller</th><th class="num">Orders</th><th class="num">Offices</th><th class="num">Obligated</th></tr></thead>
+        <tbody>
+          {% for r in v.resellers %}
+          <tr class="clickable" onclick="window.location='{{ url_for('awardees_view', key_token=r.url) }}'">
+            <td class="name-cell"><div class="primary">{{ r.company_name }}</div></td>
+            <td class="num">{{ r.orders }}</td>
+            <td class="num">{{ r.offices }}</td>
+            <td class="num">{{ r.total|money }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><h2>Offices Buying from this Vehicle</h2><span class="count">{{ v.offices|length }}</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Office</th><th class="num">Orders</th><th class="num">Resellers</th><th class="num">Obligated</th></tr></thead>
+        <tbody>
+          {% for o in v.offices %}
+          <tr class="clickable" onclick="window.location='{{ url_for('offices_view', role='awarding', code_token=o.url) }}'">
+            <td class="name-cell"><div class="primary">{{ o.awarding_office_name }}</div><div class="secondary">{{ o.awarding_agency_name|agency }}</div></td>
+            <td class="num">{{ o.orders }}</td>
+            <td class="num">{{ o.resellers }}</td>
+            <td class="num">{{ o.total|money }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><h2>Orders</h2><span class="count">{{ v.orders }}{% if v.orders_truncated %} &middot; top 300 by dollars{% endif %}</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Order</th><th>Reseller</th><th>Office</th><th class="th-desc">Description</th><th>Date</th><th class="num">Obligated</th></tr></thead>
+        <tbody>
+          {% for r in v.order_rows %}
+          <tr class="clickable" onclick="window.location='{{ record_url('award', r.record_id) }}'">
+            <td><a class="award-id-link" href="{{ record_url('award', r.record_id) }}" onclick="event.stopPropagation()">{{ r.display_id }}</a></td>
+            <td>{{ r.company_name }}</td>
+            <td>{{ r.awarding_office_name }}</td>
+            <td class="desc-text">{{ r.description or "—" }}</td>
+            <td class="record-row-date">{{ r.action_date or "—" }}</td>
+            <td class="num">{{ r.amount|money }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if v.subawards %}
+  <div class="panel">
+    <div class="panel-header"><h2>Subcontractors on these Orders</h2><span class="count">{{ v.subawards|length }}</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Subawardee</th><th>Prime Order</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+          {% for s in v.subawards %}
+          <tr><td>{{ s.subawardee_name }}</td><td>{{ s.prime_award_piid }}</td><td class="num">{{ s.subaward_amount|money }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -52,14 +52,55 @@
       <label>PSC</label>
       <input type="text" name="psc" id="psc-input" value="{{ psc_q or '' }}" placeholder="Product/Service Code">
     </div>
+    <div class="filter-field">
+      <label>Year</label>
+      <select name="year">
+        <option value="">Any year</option>
+        {% for y in year_options %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Min amount ($)</label>
+      <input type="text" inputmode="decimal" name="amount_min" value="{{ amount_min }}" placeholder="e.g. 50,000">
+    </div>
+    <div class="filter-field">
+      <label>Max amount ($)</label>
+      <input type="text" inputmode="decimal" name="amount_max" value="{{ amount_max }}" placeholder="e.g. 1,000,000">
+    </div>
+    <div class="filter-field">
+      <label>Award type</label>
+      <select name="award_type">
+        <option value="">All types</option>
+        {% for t in award_type_options %}<option value="{{ t }}" {% if t == award_type %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Purchase category</label>
+      <select name="category">
+        <option value="">All categories</option>
+        {% for c in category_options %}<option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Equipment</label>
+      <select name="equipment">
+        <option value="">All equipment</option>
+        {% for e in equipment_options %}<option value="{{ e }}" {% if e == equipment %}selected{% endif %}>{{ e }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-field">
+      <label>Model number</label>
+      <input type="text" name="model" value="{{ model_q or '' }}" placeholder="e.g. C9300, ISR4331">
+    </div>
     <div class="filter-field grow">
       <label>Search</label>
       <input type="text" name="q" id="q-input" value="{{ q or '' }}" placeholder="Search descriptions, companies, offices&hellip;">
     </div>
     <button type="submit" class="btn-primary">Search</button>
     {% if agency and department %}<a class="btn-reset" href="{{ department_url(role, agency, department) }}">View Department Summary &rarr;</a>{% endif %}
-    {% if agency or department or company_q or prime_q or uei_q or cage_q or psc_q or q %}<a class="btn-reset" href="{{ url_for('records_view', role=role) }}">Reset</a>{% endif %}
+    {% if agency or department or company_q or prime_q or uei_q or cage_q or psc_q or q or year or amount_min or amount_max or award_type or model_q or category or equipment %}<a class="btn-reset" href="{{ url_for('records_view', role=role) }}">Reset</a>{% endif %}
     <a class="btn-reset" href="{{ url_for('records_view', role=role, enrichment=1) }}">View Enrichment Set &rarr;</a>
+    <a class="btn-reset" href="{{ url_for('records_export', **export_args) }}" id="export-link">Export CSV ({{ total_matches }}) &darr;</a>
   </form>
 
   <div class="stat-row">
@@ -98,11 +139,11 @@
       {% if r[role ~ '_sub_agency_name'] and r[role ~ '_sub_agency_name'] != r[role ~ '_agency_name'] %} &middot; {{ r[role ~ '_sub_agency_name'] }}{% endif %}
     </div>
     {% if r.description %}<div class="record-row-desc">{{ r.description }}</div>{% endif %}
-    {% if r.models %}
     <div class="models-row" style="margin:0 0 10px;">
+      {% for c in r.categories %}<span class="badge badge-muted">{{ c }}</span>{% endfor %}
+      {% for e in r.equipment if e != 'Unspecified' %}<span class="badge badge-muted">{{ e }}</span>{% endfor %}
       {% for m in r.models %}<span class="badge badge-accent">{{ m }}</span>{% endfor %}
     </div>
-    {% endif %}
     <div class="record-row-footer">
       <span class="record-row-meta">
         <span class="record-row-date">Action: {{ r.action_date or "—" }}</span>
