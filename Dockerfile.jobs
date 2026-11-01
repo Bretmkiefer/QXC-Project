@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+#
+# Image for the monthly award-data refresh job (scripts/refresh_data.py).
+# Separate from the app image: it needs the scripts and a storage client, not
+# the web app or the database. See docs/data-refresh.md.
+#
+#   docker build -f Dockerfile.jobs -t <registry>/qxc-refresh-job:<tag> .
+#
+# Secrets arrive as environment variables from Secret Manager (never baked in):
+#   SAM_API_KEY, GITHUB_DISPATCH_TOKEN
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /job
+COPY requirements-jobs.txt .
+RUN pip install -r requirements-jobs.txt \
+ && groupadd --system qxc && useradd --system --gid qxc --uid 10001 --no-create-home qxc
+COPY scripts/ scripts/
+USER qxc
+ENTRYPOINT ["python", "scripts/refresh_data.py"]
+CMD ["--fetch-sam", "--incoming", "/tmp/incoming", "--apply", "--trigger-deploy"]

@@ -1,0 +1,195 @@
+# EXAMPLE ONLY: not validated and not applied. For the infrastructure owner to
+# review, adapt and apply (rename to jobs.tf). Adds the two scheduled
+# background jobs described in docs/data-refresh.md and docs/contact-enrichment.md.
+#
+#   1. Award refresh   monthly   writes the data bucket, then starts the Deploy workflow
+#   2. Contact enrich  weekly    writes Firestore only; never touches the award data
+#
+# They use separate service accounts so each has only the access it needs.
+# Secrets are created empty here; put the values in with
+#   gcloud secrets versions add <id> --data-file=-
+# (never in tfvars or the repo).
+
+variable "refresh_job_image" {
+  description = "Image built from Dockerfile.jobs, e.g. <registry>/qxc-refresh-job:<tag>"
+  type        = string
+}
+
+variable "refresh_schedule" {
+  description = "Cron for the award refresh (default: 06:00 on the 3rd of each month)"
+  type        = string
+  default     = "0 6 3 * *"
+}
+
+variable "enrich_schedule" {
+  description = "Cron for the contact enrichment job (default: Sundays 03:00)"
+  type        = string
+  default     = "0 3 * * 0"
+}
+
+locals {
+  job_secrets = ["sam-api-key", "github-dispatch-token", "openrouter-api-key"]
+}
+
+resource "google_secret_manager_secret" "job" {
+  for_each  = toset(local.job_secrets)
+  secret_id = "${var.name}-${each.key}"
+  replication {
+    auto {}
+  }
+}
+
+# ------------------------------------------------------------ award refresh --
+resource "google_service_account" "refresh" {
+  account_id   = "${var.name}-refresh"
+  display_name = "Monthly award data refresh"
+}
+
+# write access to the data bucket (the bucket is versioned, so old CSVs are kept)
+resource "google_storage_bucket_iam_member" "refresh_writes_data" {
+  bucket = google_storage_bucket.data.name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${google_service_account.refresh.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "refresh_reads" {
+  for_each  = toset(["sam-api-key", "github-dispatch-token"])
+  secret_id = google_secret_manager_secret.job[each.key].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.refresh.email}"
+}
+
+resource "google_cloud_run_v2_job" "refresh" {
+  name     = "${var.name}-refresh"
+  location = var.region
+  template {
+    template {
+      service_account = google_service_account.refresh.email
+      timeout         = "1800s"
+      max_retries     = 0 # a safety stop must not silently retry
+      containers {
+        image = var.refresh_job_image
+        env {
+          name = "SAM_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.job["sam-api-key"].secret_id
+              version = "latest"
+            }
+          }
+        }
+        env {
+          name = "GITHUB_DISPATCH_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.job["github-dispatch-token"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+# ------------------------------------------------------- contact enrichment --
+# Runs the same image as the web app with a different command, so it can read
+# the award data to rank targets and write contacts to Firestore.
+resource "google_service_account" "enrich" {
+  account_id   = "${var.name}-enrich"
+  display_name = "Contact enrichment job"
+}
+
+resource "google_project_iam_member" "enrich_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.enrich.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "enrich_reads" {
+  secret_id = google_secret_manager_secret.job["openrouter-api-key"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.enrich.email}"
+}
+
+resource "google_cloud_run_v2_job" "enrich" {
+  name     = "${var.name}-enrich"
+  location = var.region
+  template {
+    template {
+      service_account = google_service_account.enrich.email
+      timeout         = "3600s"
+      max_retries     = 0
+      containers {
+        image   = "${local.image}:${var.image_tag}"
+        command = ["python", "/app/app/enrich_job.py"]
+        env {
+          name  = "QXC_USE_FIRESTORE"
+          value = "1"
+        }
+        env {
+          name  = "QXC_ASSISTANT_MODEL"
+          value = "anthropic/claude-haiku-5.5"
+        }
+        env {
+          name  = "QXC_ENRICH_MAX_USD"
+          value = "5" # hard spending cap per run
+        }
+        env {
+          name = "OPENROUTER_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.job["openrouter-api-key"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+# ---------------------------------------------------------------- schedules --
+resource "google_service_account" "scheduler" {
+  account_id   = "${var.name}-scheduler"
+  display_name = "Triggers the scheduled jobs"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "scheduler_runs" {
+  for_each = {
+    refresh = google_cloud_run_v2_job.refresh.name
+    enrich  = google_cloud_run_v2_job.enrich.name
+  }
+  name     = each.value
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.scheduler.email}"
+}
+
+resource "google_cloud_scheduler_job" "refresh" {
+  name      = "${var.name}-refresh-monthly"
+  region    = var.region
+  schedule  = var.refresh_schedule
+  time_zone = "America/New_York"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.refresh.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+}
+
+resource "google_cloud_scheduler_job" "enrich" {
+  name      = "${var.name}-enrich-weekly"
+  region    = var.region
+  schedule  = var.enrich_schedule
+  time_zone = "America/New_York"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.enrich.name}:run"
+    oauth_token {
+      service_account_email = google_service_account.scheduler.email
+    }
+  }
+}

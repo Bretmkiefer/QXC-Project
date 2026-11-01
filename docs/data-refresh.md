@@ -75,22 +75,68 @@ new export file(s)  ->  scripts/refresh_data.py  ->  two CSVs in the cloud bucke
 - Offices can change across the life of an award, so one award id can show
   more than one awarding office code. This is expected, not a duplicate.
 
-## Scheduling (not set up)
+## The monthly SAM.gov refresh
 
-Collecting new exports automatically needs a decision on where they come from
-and how often. Two reasonable shapes, both calling the steps above:
+`scripts/fetch_sam_awards.py` pulls new prime awards from the SAM.gov Contract
+Awards API; `scripts/refresh_data.py --fetch-sam` then merges them with the
+steps above. Intended cadence: **about once a month**.
 
-- Cloud Scheduler -> a Cloud Run job that fetches, runs `refresh_data.py
-  --apply`, then triggers the Deploy workflow; or
-- a scheduled GitHub Actions workflow doing the same.
+What it does
+- Asks for awards (not IDVs) matching the search text (default `cisco`, set
+  with `QXC_SAM_QUERY`) signed on or after **the current data-through date
+  minus 45 days**. The overlap catches late-reported records; whatever is
+  already on file is dropped by the merge.
+- Maps the response to our column layout. The API has no subaward data, no
+  company phone and no base award description; those stay blank, so
+  subawards still need a manual file.
+- The API key is read **only** from the `SAM_API_KEY` environment variable
+  (Secret Manager on the job). It is not accepted as an argument and the
+  request URL, which carries it, is never printed or logged.
 
-`refresh_data.py --fetch-cmd "<command>"` is the hook: the command writes new
-exports into the `--incoming` folder, and the merge, upload and checks run
-unchanged. `--fetch-cmd` is untested against a real feed because none is
-configured yet.
+Safety checks (also in a dry run). The job exits with code **3** and uploads
+nothing if: zero new prime records (`--allow-zero` to accept a quiet month);
+more new records than max(1,000, 20% of the rows on file) (`--spike-floor`,
+`--max-new-pct`); a new record dated in the future or before the fetch window;
+or more than 10% of fetched rows lack a piid, date, UEI or amount (the API
+shape probably changed). Exit code 2 means the fetch itself failed (no key,
+403/400 from SAM.gov, a network error, or the call cap was hit).
+
+Before the first scheduled run, someone with the key should check the mapping
+once, because it was written from the API documentation and has not yet been
+run against the live service:
+
+```bash
+SAM_API_KEY=<key> python scripts/fetch_sam_awards.py --probe
+```
+
+It fetches one record and lists which of our columns were filled and which
+came back empty. Then do a full dry run (`--fetch-sam`, no `--apply`) and
+look at the new/already-present counts before enabling the schedule.
+
+Things to know
+- **Quota:** a personal key with no SAM.gov role gets only **10 calls a day**
+  (100 records each); with a role, 1,000. `--max-calls` (default 40) stops the
+  run before it can exhaust a quota; a monthly run normally needs a handful.
+- **Recent DoD awards** are withheld by the API for 90 days, so they arrive
+  on a later run; the overlap window covers this.
+- **Coverage may not match the existing files.** They were built by a
+  different selection, and the API's text search will not return exactly the
+  same set. Expect the first runs to add records the old files lacked, and
+  review the counts instead of assuming parity.
+- The job needs **write access to the data bucket** and, to rebuild the app
+  automatically, a GitHub token that can start the Deploy workflow
+  (`GITHUB_DISPATCH_TOKEN`, `--trigger-deploy`). Without the token it still
+  updates the bucket and says to run Deploy by hand.
+
+Hosting (for whoever owns the infrastructure): `Dockerfile.jobs` builds the job
+image; `deploy/terraform/jobs.tf.example` sketches the Cloud Run job, Cloud
+Scheduler cron (`0 6 3 * *`), separate service accounts and the secrets. It
+is an unvalidated example, not applied.
 
 ## Not yet verified against the real bucket
 
-The merge and refresh logic is tested end to end on local copies of the
-current files (new rows, repeats, revisions, thin files, running twice). The
-upload to the bucket uses `gcloud storage cp` and has not been run.
+The merge, refresh, safety checks and SAM.gov fetch are tested end to end on
+local copies of the current files with a simulated API (new rows, repeats,
+revisions, thin files, running twice, spike, future dates, bad key, quota cap,
+retries). Not yet run for real: the live SAM.gov API (use `--probe`), the
+upload to the bucket, and the deploy trigger.
