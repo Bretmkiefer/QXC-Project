@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Review Contacts{% endblock %}
+{% block content %}
+<div class="section-head" style="border-bottom:none;">
+  <h1 class="page-title">Review Contacts</h1>
+  <p class="page-desc">Contacts found automatically. They are <strong>not visible to clients</strong> until you verify them. Each one was matched to an exact line of text on a web page before it was saved; the checks below are automatic and are a guide, not proof. Verify the ones you have confirmed, reject the rest.</p>
+  <div class="stat-row">
+    <div class="stat-tile"><div class="label">Waiting for review</div><div class="value amber">{{ rows|length }}</div></div>
+  </div>
+</div>
+
+<div style="padding:0 32px 24px;">
+  <div class="panel">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Contact</th>
+            <th>Role</th>
+            <th>Email / Phone</th>
+            <th>For</th>
+            <th>Confidence</th>
+            <th>Automatic checks</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in rows %}
+          <tr>
+            <td class="name-cell"><div class="primary">{{ c.first_name }} {{ c.last_name }}</div></td>
+            <td>{{ c.title or "—" }}</td>
+            <td>{{ c.email or "—" }}<div class="secondary">{{ c.phone or "" }}</div></td>
+            <td>{{ c.organization_name or c.agency_office or "—" }}</td>
+            <td><span class="badge badge-{{ 'green' if c.confidence == 'High' else ('amber' if c.confidence == 'Medium' else 'muted') }}">{{ c.confidence or "—" }}</span></td>
+            <td class="desc-text">
+              {% for name, val in c.checks.items() %}<div>{{ '✓' if val else '✗' }} {{ name|replace('_', ' ') }}</div>{% endfor %}
+              {% if show_sources %}
+              <div class="secondary" style="margin-top:6px;">Page: {{ c.source_url or "—" }}</div>
+              <div class="secondary">&ldquo;{{ c.evidence_quote }}&rdquo;</div>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap;">
+              <form method="post" action="{{ url_for('verify_contact_route', token=c.token) }}" style="display:inline;"><button type="submit" class="btn-primary">Verify</button></form>
+              <form method="post" action="{{ url_for('reject_contact_route', token=c.token) }}" style="display:inline;"><button type="submit" class="btn-reset" style="border:1px solid var(--border);background:none;cursor:pointer;">Reject</button></form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not rows %}<div class="empty-state">Nothing waiting for review.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -508,6 +508,15 @@ CONTACT_FIELDS = (
     "agency_office", "email", "phone", "linkedin_url", "contact_type",
     "source", "source_url", "verified_at", "confidence",
 )
+# Added for automated contact enrichment (see docs/contact-enrichment.md).
+# A contact with no verification_status (everything entered by hand before
+# this existed) counts as verified; automated finds start as "unverified".
+CONTACT_REVIEW_COLUMNS = ("verification_status", "evidence_quote", "evidence_checks", "found_by", "run_id")
+
+
+def contact_is_visible(contact: dict) -> bool:
+    """Clients see verified contacts only."""
+    return (contact.get("verification_status") or "verified") == "verified"
 
 
 def ensure_contacts_table():
@@ -540,9 +549,31 @@ def ensure_contacts_table():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_contacts_uei ON contacts(uei)")
+        have = {r[1] for r in conn.execute("PRAGMA table_info(contacts)")}
+        for col in CONTACT_REVIEW_COLUMNS:
+            if col not in have:
+                conn.execute(f"ALTER TABLE contacts ADD COLUMN {col} TEXT")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS enrichment_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                target_key TEXT NOT NULL,
+                kind TEXT,
+                target_name TEXT,
+                value REAL,
+                status TEXT,
+                saved INTEGER,
+                cost_usd REAL,
+                detail TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_enrichment_log_target ON enrichment_log(target_key)")
 
 
-def get_all_contacts() -> list:
+def get_all_contacts(include_unverified: bool = False) -> list:
     if USE_FIRESTORE:
         docs = _fs_client.collection("contacts").stream()
         out = []
@@ -550,14 +581,24 @@ def get_all_contacts() -> list:
             d = doc.to_dict()
             d["id"] = doc.id
             out.append(d)
-        return out
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cur = conn.execute("SELECT * FROM contacts ORDER BY id DESC")
-        return [dict(row) for row in cur.fetchall()]
+    else:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute("SELECT * FROM contacts ORDER BY id DESC")
+            out = [dict(row) for row in cur.fetchall()]
+    return out if include_unverified else [c for c in out if contact_is_visible(c)]
 
 
-def get_contact(contact_id) -> dict:
+def get_contact(contact_id, include_unverified: bool = False) -> dict:
+    """The contact, or None if it doesn't exist or (unless include_unverified)
+    has not been verified, so unverified finds never reach a client page."""
+    c = _get_contact_raw(contact_id)
+    if c is None or (not include_unverified and not contact_is_visible(c)):
+        return None
+    return c
+
+
+def _get_contact_raw(contact_id) -> dict:
     if USE_FIRESTORE:
         doc = _fs_client.collection("contacts").document(str(contact_id)).get()
         if not doc.exists:
@@ -574,6 +615,106 @@ def get_contact(contact_id) -> dict:
         cur = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
         row = cur.fetchone()
         return dict(row) if row else None
+
+
+def get_unverified_contacts() -> list:
+    out = [c for c in get_all_contacts(include_unverified=True) if (c.get("verification_status") or "") == "unverified"]
+    rank = {"High": 0, "Medium": 1, "Low": 2}
+    return sorted(out, key=lambda c: (rank.get(c.get("confidence"), 3), str(c.get("last_name") or "")))
+
+
+def create_enrichment_contact(fields: dict, evidence: dict) -> str:
+    """Save an automatically found contact as UNVERIFIED. The evidence (page,
+    exact text, automatic checks) is stored with it but never shown to
+    clients."""
+    data = {k: (fields.get(k) or "").strip() for k in CONTACT_FIELDS}
+    checks = evidence.get("checks") or {}
+    extra = {
+        "verification_status": "unverified",
+        "evidence_quote": evidence.get("quote", ""),
+        "evidence_checks": json.dumps(checks, sort_keys=True),
+        "found_by": "enrichment",
+        "run_id": evidence.get("run_id", ""),
+    }
+    data["source"] = data["source"] or "Automated web lookup"
+    data["source_url"] = evidence.get("url", "")
+    if USE_FIRESTORE:
+        doc_ref = _fs_client.collection("contacts").document()
+        doc_ref.set({
+            **data, **extra, "is_test_data": False,
+            "created_at": firestore.SERVER_TIMESTAMP, "updated_at": firestore.SERVER_TIMESTAMP,
+        })
+        return doc_ref.id
+    cols = list(CONTACT_FIELDS) + list(extra)
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            f"INSERT INTO contacts ({', '.join(cols)}, is_test_data, created_at, updated_at) "
+            f"VALUES ({', '.join('?' for _ in cols)}, 0, datetime('now'), datetime('now'))",
+            [*(data[k] for k in CONTACT_FIELDS), *extra.values()],
+        )
+        conn.commit()
+        return str(cur.lastrowid)
+
+
+def set_contact_verification(contact_id, status: str):
+    """status: 'verified' or 'rejected'. Verified contacts become visible."""
+    if status not in ("verified", "rejected"):
+        raise ValueError(status)
+    today = datetime.date.today().isoformat()
+    if USE_FIRESTORE:
+        patch = {"verification_status": status, "updated_at": firestore.SERVER_TIMESTAMP}
+        if status == "verified":
+            patch["verified_at"] = today
+        _fs_client.collection("contacts").document(str(contact_id)).update(patch)
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE contacts SET verification_status = ?, "
+            "verified_at = CASE WHEN ? = 'verified' THEN ? ELSE verified_at END, updated_at = datetime('now') WHERE id = ?",
+            (status, status, today, int(contact_id)),
+        )
+        conn.commit()
+
+
+def log_enrichment(entry: dict):
+    """One line per target the enrichment job worked on (also the memory that
+    stops it re-searching the same target every week)."""
+    row = {
+        "run_id": entry.get("run_id", ""), "target_key": entry["target_key"], "kind": entry.get("kind", ""),
+        "target_name": entry.get("target_name", ""), "value": float(entry.get("value") or 0),
+        "status": entry.get("status", ""), "saved": int(entry.get("saved") or 0),
+        "cost_usd": float(entry.get("cost_usd") or 0), "detail": entry.get("detail", ""),
+    }
+    if USE_FIRESTORE:
+        _fs_client.collection("enrichment_log").add({**row, "created_at": firestore.SERVER_TIMESTAMP})
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO enrichment_log (run_id, target_key, kind, target_name, value, status, saved, cost_usd, detail, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+            (row["run_id"], row["target_key"], row["kind"], row["target_name"], row["value"], row["status"],
+             row["saved"], row["cost_usd"], row["detail"]),
+        )
+        conn.commit()
+
+
+def recent_enrichment_targets(days: int) -> set:
+    """target_keys the job already worked on within the last `days` days."""
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+    if USE_FIRESTORE:
+        out = set()
+        for doc in _fs_client.collection("enrichment_log").stream():
+            d = doc.to_dict()
+            ts = d.get("created_at")
+            if ts is not None and ts >= cutoff and d.get("status") != "error":
+                out.add(d.get("target_key"))
+        return out
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "SELECT DISTINCT target_key FROM enrichment_log WHERE created_at >= ? AND status != 'error'",
+            (cutoff.strftime("%Y-%m-%d %H:%M:%S"),),
+        )
+        return {r[0] for r in cur.fetchall()}
 
 
 def create_contact(fields: dict, is_test_data: bool = False) -> str:
@@ -2045,16 +2186,56 @@ def edit_contact_route(token):
     last_name = (request.form.get("last_name") or "").strip()
     if not first_name and not last_name:
         return redirect(url_for("contact_detail_view", token=token))
-    if get_contact(contact_id) is None:
+    if get_contact(contact_id, include_unverified=True) is None:
         abort(404)
     update_contact(contact_id, request.form)
     return redirect(url_for("contact_detail_view", token=token))
 
 
+def _require_edit_role():
+    if getattr(g, "auth_role", "edit") != "edit":
+        abort(403)
+
+
+@app.route("/contacts/review")
+def contacts_review_view():
+    """Queue of automatically found, unverified contacts (team only)."""
+    _require_edit_role()
+    rows = get_unverified_contacts()
+    for c in rows:
+        raw = c.get("evidence_checks")
+        try:
+            c["checks"] = json.loads(raw) if isinstance(raw, str) and raw else (raw or {})
+        except ValueError:
+            c["checks"] = {}
+        c["token"] = encode_key(str(c["id"]))
+    return render_template("contacts_review.html", rows=rows, active="review")
+
+
+@app.route("/contact/<token>/verify", methods=["POST"])
+def verify_contact_route(token):
+    _require_edit_role()
+    cid = decode_key(token)
+    if get_contact(cid, include_unverified=True) is None:
+        abort(404)
+    set_contact_verification(cid, "verified")
+    return redirect(url_for("contacts_review_view"))
+
+
+@app.route("/contact/<token>/reject", methods=["POST"])
+def reject_contact_route(token):
+    _require_edit_role()
+    cid = decode_key(token)
+    if get_contact(cid, include_unverified=True) is None:
+        abort(404)
+    set_contact_verification(cid, "rejected")
+    return redirect(url_for("contacts_review_view"))
+
+
 @app.route("/contact/<token>/delete", methods=["POST"])
 def delete_contact_route(token):
     contact_id = decode_key(token)
-    if get_contact(contact_id) is not None:
+    if get_contact(contact_id, include_unverified=True) is not None:
         delete_contact(contact_id)
     return redirect(request.referrer or url_for("index"))
 
