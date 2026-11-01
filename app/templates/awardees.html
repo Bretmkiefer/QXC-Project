@@ -54,7 +54,7 @@
                 {% if selected.phone %}<span>{{ selected.phone }}</span>{% endif %}
                 <span class="badge badge-{{ selected.coverage.cls }}">{{ selected.coverage.label }}</span>
               </div>
-              {% if not selected.phone %}<p class="note-text" style="margin:4px 0 0;">No contact phone on record &mdash; SAM.gov registration data wasn't populated for this company in Checkpoint 1. Named contacts at the company are planned for the next data batch.</p>{% endif %}
+              {% if not selected.phone %}<p class="note-text" style="margin:4px 0 0;">No contact phone on record for this company. Named contacts at the company are planned for the next data batch.</p>{% endif %}
             </div>
           </div>
 
@@ -215,8 +215,10 @@
                 <label>LinkedIn URL<input type="url" name="linkedin_url"></label>
                 <label>Agency/Office<input type="text" name="agency_office" placeholder="if a govt contact"></label>
                 <label>CAGE<input type="text" name="cage"></label>
+                {% if show_sources %}
                 <label>Source<input type="text" name="source" placeholder="e.g. Manual research"></label>
                 <label>Source URL<input type="url" name="source_url"></label>
+                {% endif %}
                 <label>Verification Date<input type="date" name="verified_at"></label>
                 <label>Data Confidence
                   <select name="confidence">

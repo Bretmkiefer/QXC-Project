@@ -238,8 +238,10 @@
                 <label>Email<input type="email" name="email"></label>
                 <label>Phone<input type="text" name="phone"></label>
                 <label>LinkedIn URL<input type="url" name="linkedin_url"></label>
+                {% if show_sources %}
                 <label>Source<input type="text" name="source" placeholder="e.g. Manual research"></label>
                 <label>Source URL<input type="url" name="source_url"></label>
+                {% endif %}
                 <label>Verification Date<input type="date" name="verified_at"></label>
                 <label>Data Confidence
                   <select name="confidence">

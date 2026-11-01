@@ -77,8 +77,10 @@
   {% if r.enrichment %}
   <div class="detail-field"><span class="label">Quantity</span><span class="value">{{ r.enrichment.quantity or "—" }}</span></div>
   <div class="detail-field"><span class="label">Equipment Details</span><span class="value">{{ r.enrichment.equipment_details or "—" }}</span></div>
+  {% if show_sources %}
   <div class="detail-field"><span class="label">Source</span><span class="value">{{ r.enrichment.source or "—" }}</span></div>
   <div class="detail-field"><span class="label">Source URL</span><span class="value">{{ r.enrichment.source_url or "—" }}</span></div>
+  {% endif %}
   <div class="detail-field"><span class="label">Verification Date</span><span class="value">{{ r.enrichment.verified_at or "—" }}</span></div>
   <div class="detail-field"><span class="label">Data Confidence</span><span class="value">{{ r.enrichment.confidence or "—" }}</span></div>
   <div class="detail-field"><span class="label">Last Updated</span><span class="value">{{ r.enrichment.updated_at or "—" }}</span></div>
@@ -93,8 +95,10 @@
     <form method="post" action="{{ url_for('save_record_enrichment_route', record_type=r.record_type, token=token) }}" class="contact-form-grid">
       <label>Quantity<input type="text" name="quantity" value="{{ r.enrichment.quantity if r.enrichment else '' }}"></label>
       <label>Equipment Details<input type="text" name="equipment_details" value="{{ r.enrichment.equipment_details if r.enrichment else '' }}"></label>
+      {% if show_sources %}
       <label>Source<input type="text" name="source" value="{{ r.enrichment.source if r.enrichment else '' }}" placeholder="e.g. Manual research"></label>
       <label>Source URL<input type="url" name="source_url" value="{{ r.enrichment.source_url if r.enrichment else '' }}"></label>
+      {% endif %}
       <label>Verification Date<input type="date" name="verified_at" value="{{ r.enrichment.verified_at if r.enrichment else '' }}"></label>
       <label>Data Confidence
         <select name="confidence">

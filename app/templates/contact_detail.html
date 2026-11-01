@@ -57,8 +57,10 @@
       <label>UEI<input type="text" name="uei" value="{{ raw.uei or '' }}"></label>
       <label>CAGE<input type="text" name="cage" value="{{ raw.cage or '' }}"></label>
       <label>Agency/Office<input type="text" name="agency_office" value="{{ raw.agency_office or '' }}"></label>
+      {% if show_sources %}
       <label>Source<input type="text" name="source" value="{{ raw.source or '' }}"></label>
       <label>Source URL<input type="url" name="source_url" value="{{ raw.source_url or '' }}"></label>
+      {% endif %}
       <label>Verification Date<input type="date" name="verified_at" value="{{ raw.verified_at or '' }}"></label>
       <label>Data Confidence
         <select name="confidence">

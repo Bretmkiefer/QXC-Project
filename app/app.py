@@ -88,9 +88,18 @@ def require_basic_auth():
     )
 
 
+# Source/Source URL are kept in the data for the team's own bookkeeping but
+# are never shown in the app unless QXC_SHOW_SOURCES=1 is set on the service.
+SHOW_SOURCES = os.environ.get("QXC_SHOW_SOURCES", "0") == "1"
+
+
 @app.context_processor
 def inject_auth():
-    return {"auth_user": getattr(g, "auth_user", None), "auth_role": getattr(g, "auth_role", "edit")}
+    return {
+        "auth_user": getattr(g, "auth_user", None),
+        "auth_role": getattr(g, "auth_role", "edit"),
+        "show_sources": SHOW_SOURCES,
+    }
 
 
 ROLES = {
@@ -614,17 +623,19 @@ def create_contact(fields: dict, is_test_data: bool = False) -> str:
 
 
 def update_contact(contact_id, fields: dict):
-    data = {k: (fields.get(k) or "").strip() for k in CONTACT_FIELDS}
+    # Only fields the form actually sent are written, so hidden ones (source,
+    # source_url) keep their stored values instead of being blanked.
+    data = {k: (fields.get(k) or "").strip() for k in CONTACT_FIELDS if k in fields}
     if USE_FIRESTORE:
         _fs_client.collection("contacts").document(str(contact_id)).update(
             {**data, "updated_at": firestore.SERVER_TIMESTAMP}
         )
         return
-    set_clause = ", ".join(f"{k} = ?" for k in CONTACT_FIELDS)
+    set_clause = ", ".join([*(f"{k} = ?" for k in data), "updated_at = datetime('now')"])
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
-            f"UPDATE contacts SET {set_clause}, updated_at = datetime('now') WHERE id = ?",
-            (*[data[k] for k in CONTACT_FIELDS], int(contact_id)),
+            f"UPDATE contacts SET {set_clause} WHERE id = ?",
+            (*data.values(), int(contact_id)),
         )
         conn.commit()
 
@@ -842,22 +853,26 @@ def get_record_enrichment(record_type: str, record_id) -> dict:
 def save_record_enrichment(record_type: str, record_id, fields: dict):
     record_id = str(record_id)
     data = {k: (fields.get(k) or "").strip() for k in ENRICHMENT_FIELDS}
+    # On update, only fields the form sent are overwritten (hidden source
+    # fields keep their stored values); a brand-new row gets every field.
+    sent = {k: v for k, v in data.items() if k in fields}
     if USE_FIRESTORE:
         doc_ref = _fs_client.collection("record_enrichment").document(f"{record_type}_{record_id}")
         existing = doc_ref.get()
-        payload = {**data, "record_type": record_type, "record_id": record_id, "updated_at": firestore.SERVER_TIMESTAMP}
+        payload = {**(sent if existing.exists else data), "record_type": record_type, "record_id": record_id,
+                   "updated_at": firestore.SERVER_TIMESTAMP}
         if not existing.exists:
             payload["created_at"] = firestore.SERVER_TIMESTAMP
         doc_ref.set(payload, merge=True)
         return
     columns = ", ".join(ENRICHMENT_FIELDS)
     placeholders = ", ".join("?" for _ in ENRICHMENT_FIELDS)
-    update_clause = ", ".join(f"{k} = excluded.{k}" for k in ENRICHMENT_FIELDS)
+    update_clause = ", ".join([*(f"{k} = excluded.{k}" for k in sent), "updated_at = datetime('now')"])
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             f"INSERT INTO record_enrichment (record_type, record_id, {columns}, created_at, updated_at) "
             f"VALUES (?, ?, {placeholders}, datetime('now'), datetime('now')) "
-            f"ON CONFLICT(record_type, record_id) DO UPDATE SET {update_clause}, updated_at = datetime('now')",
+            f"ON CONFLICT(record_type, record_id) DO UPDATE SET {update_clause}",
             (record_type, record_id, *[data[k] for k in ENRICHMENT_FIELDS]),
         )
         conn.commit()
@@ -1411,8 +1426,7 @@ def build_contact_detail(contact_id):
         {
             "title": "Provenance",
             "fields": [
-                _field("Source", c.get("source")),
-                _field("Source URL", c.get("source_url")),
+                *([_field("Source", c.get("source")), _field("Source URL", c.get("source_url"))] if SHOW_SOURCES else []),
                 _field("Verification Date", c.get("verified_at")),
                 _field("Data Confidence", c.get("confidence")),
             ],
