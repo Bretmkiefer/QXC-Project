@@ -16,7 +16,7 @@ Internet ──HTTPS──► Cloud Run service (1 vCPU / 2 GiB, 1..3 instances,
                         ├─ writes notes / contacts / viewed / enrichment to Firestore
                         └─ logs to Cloud Logging
 GitHub Actions ──(Workload Identity, no keys)──► build ──► push ──► gcloud run services update
-GCS <project>-<name>-data/raw/   ◄── the two USAspending CSVs (versioned)
+GCS <project>-<name>-data/raw/   ◄── the two source CSVs (versioned)
 ```
 
 Cloud Run gives you an HTTPS URL on `*.run.app` with no domain needed. A
@@ -236,7 +236,7 @@ everything except the Firestore data, which is protected.
 ## Next phase (the gap list)
 
 1. SSO login (step two in Jack's words): Identity-Aware Proxy in front of Cloud Run, allowing named Google accounts and eventually whole domains (Quantum Exchange's included), replacing the shared logins. Little or no app code.
-2. Data refresh program (Jack's ask): scheduled pull from USAspending into the bucket, rebuild, redeploy, with the last-update date surfaced in the UI rather than only on `/health`.
+2. Data refresh program (Jack's ask): scheduled pull into the bucket, rebuild, redeploy, with the last-update date surfaced in the UI rather than only on `/health`.
 3. Custom domain on Cloud Run.
 4. CSRF protection on the write routes once there are real user sessions.
 5. Remote Terraform state in GCS.

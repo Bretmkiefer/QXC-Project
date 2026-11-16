@@ -53,7 +53,7 @@ resource "google_artifact_registry_repository" "app" {
 }
 
 # ------------------------------------------------- source data bucket ----
-# Holds the USAspending CSV exports under raw/. CI copies them into the
+# Holds the source CSV exports under raw/. CI copies them into the
 # build context; versioning keeps every refresh so a bad export can be
 # rolled back.
 resource "google_storage_bucket" "data" {

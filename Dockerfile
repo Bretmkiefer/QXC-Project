@@ -2,7 +2,7 @@
 #
 # QXC Equipment Intelligence container.
 #
-# Stage 1 builds db/qxc.db from the two USAspending CSVs so the runtime image
+# Stage 1 builds db/qxc.db from the two source CSVs so the runtime image
 # ships a ready-to-serve database and never needs the raw files. The CSVs are
 # gitignored; put them in data/raw/ before building (CI pulls them from S3).
 
