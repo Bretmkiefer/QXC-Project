@@ -11,13 +11,20 @@ job it comes from Secret Manager). It is never accepted on the command line and
 the request URL, which carries it, is never printed or logged.
 
 What it asks for: awards (not IDVs) signed from a little before the current
-data-through date onward that match the search text (default "cisco"). The
-small overlap catches records the government reports late; anything already on
-file is dropped later by the merge, so overlap costs nothing.
+data-through date onward that match the query. The query is every vendor
+keyword in scripts/vendors.py (cisco, palo alto, juniper, ...), one search per
+keyword; each result is then filtered by that vendor's rules, because a keyword
+also matches places, ships and unrelated products. QXC_SAM_QUERY overrides the
+list with comma-separated search texts (a text that is not a vendor keyword is
+kept unfiltered). The small overlap catches records the government reports
+late; anything already on file is dropped later by the merge, so overlap costs
+nothing.
 
 Limits worth knowing (from the API's documentation)
   * 100 records per call; without a SAM.gov role a personal key allows only
-    10 calls a day (1,000 with one). --max-calls stops well short of the quota.
+    10 calls a day (1,000 with one). Each keyword costs at least one call, so
+    the full vendor list needs a key with a role; --max-calls is shared by all
+    the searches and stops well short of that quota.
   * Civilian awards and DoD awards older than 90 days are returned; very recent
     DoD awards are withheld by the API ("revealed" data), so a few weeks of
     DoD activity can arrive on the next run. The overlap window covers this.
@@ -37,9 +44,18 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import vendors  # same folder
+
 API_URL = "https://api.sam.gov/contract-awards/v1/search"
 PAGE_SIZE = 100
-SEARCH_TEXT = os.environ.get("QXC_SAM_QUERY", "cisco")
+
+
+def search_terms() -> list:
+    """The query: one search text per entry. Every vendor keyword unless
+    QXC_SAM_QUERY names its own comma-separated list."""
+    raw = os.environ.get("QXC_SAM_QUERY", "").strip()
+    return [t.strip() for t in raw.split(",") if t.strip()] if raw else vendors.all_keywords()
+
 
 # Output columns: the ones the database build reads, plus the ones the merge
 # uses to recognize a record that is already on file.
@@ -176,7 +192,7 @@ def build_url(api_key: str, since: datetime.date, offset: int, limit: int = PAGE
     params = {
         "api_key": api_key,
         "awardOrIDV": "Award",
-        "q": query if query is not None else SEARCH_TEXT,
+        "q": query if query is not None else search_terms()[0],
         "dateSigned": f"[{since.strftime('%m/%d/%Y')},]",
         "limit": str(limit),
         "offset": str(offset),
@@ -185,12 +201,12 @@ def build_url(api_key: str, since: datetime.date, offset: int, limit: int = PAGE
     return API_URL + "?" + urllib.parse.urlencode(params, safe="[],/")
 
 
-def fetch_pages(api_key, since, transport=http_get, max_calls=40, sleep=1.0, log=print, limit=PAGE_SIZE):
-    """Yield raw award records, page by page, stopping at the end of the data
-    or at max_calls (a quota guard)."""
+def fetch_pages(api_key, since, transport=http_get, max_calls=40, sleep=1.0, log=print, limit=PAGE_SIZE, query=None):
+    """Yield raw award records for one search text, page by page, stopping at
+    the end of the data or at max_calls (a quota guard)."""
     offset, calls = 0, 0
     while calls < max_calls:
-        url = build_url(api_key, since, offset, limit)
+        url = build_url(api_key, since, offset, limit, query)
         status, data = None, None
         for attempt in range(4):
             status, data = transport(url)
@@ -209,7 +225,7 @@ def fetch_pages(api_key, since, transport=http_get, max_calls=40, sleep=1.0, log
         if status != 200 or not isinstance(data, dict):
             raise FetchError(f"unexpected response from SAM.gov (status {status}).")
         batch = data.get("awardSummary") or []
-        log(json.dumps({"event": "page", "offset": offset, "records": len(batch), "total": data.get("totalRecords")}))
+        log(json.dumps({"event": "page", "query": query, "offset": offset, "records": len(batch), "total": data.get("totalRecords")}))
         yield from batch
         total = data.get("totalRecords")
         offset += 1
@@ -258,11 +274,57 @@ def write_rows(path: Path, rows: list):
         w.writerows(rows)
 
 
+def _row_identity(row: dict) -> tuple:
+    return tuple(str(row.get(c, "")).strip() for c in (
+        "award_id_piid", "parent_award_id_piid", "modification_number", "transaction_number",
+        "recipient_uei", "federal_action_obligation", "action_date"))
+
+
 def fetch_new_awards(api_key, existing_csv: Path, overlap_days=45, transport=http_get, max_calls=40, sleep=1.0, log=print):
+    """Run every search in the query and return (since, rows): the mapped
+    records that pass their vendor's rules, each once even when two searches
+    return it. max_calls is one budget shared by all the searches."""
     since = data_through(existing_csv) - datetime.timedelta(days=overlap_days)
-    log(json.dumps({"event": "fetch_start", "since": since.isoformat(), "query": SEARCH_TEXT}))
-    rows = [map_record(r) for r in fetch_pages(api_key, since, transport, max_calls, sleep, log)]
-    check_mapped(rows)
+    terms = search_terms()
+    log(json.dumps({"event": "fetch_start", "since": since.isoformat(), "query": terms}))
+
+    calls = {"used": 0}
+
+    def counted(url):
+        calls["used"] += 1
+        return transport(url)
+
+    fetched, rows, seen = [], [], set()
+    for term in terms:
+        remaining = max_calls - calls["used"]
+        if remaining <= 0:
+            raise FetchError(
+                f"stopped after {max_calls} calls with searches still to run ({term!r} onward); "
+                "raise --max-calls or run again later.")
+        vendor = vendors.vendor_for_keyword(term)
+        mapped = [map_record(r) for r in fetch_pages(api_key, since, counted, remaining, sleep, log, query=term)]
+        fetched += mapped
+        kept, dropped = 0, {}
+        for row in mapped:
+            if vendor is not None:
+                # This API has no base award description, so the transaction
+                # description is all there is to judge the row by.
+                keep, reason = vendors.keep_row(
+                    vendor, row["transaction_description"], row["product_or_service_code"], row["naics_code"])
+                if not keep:
+                    dropped[reason] = dropped.get(reason, 0) + 1
+                    continue
+            ident = _row_identity(row)
+            if ident in seen:
+                dropped["returned by an earlier search"] = dropped.get("returned by an earlier search", 0) + 1
+                continue
+            seen.add(ident)
+            rows.append(row)
+            kept += 1
+        log(json.dumps({"event": "search_done", "query": term, "vendor": vendor["key"] if vendor else None,
+                        "fetched": len(mapped), "kept": kept, "dropped": dropped}))
+    # Shape check on everything the API returned, before filtering.
+    check_mapped(fetched)
     return since, rows
 
 
@@ -273,6 +335,7 @@ def main():
     ap.add_argument("--overlap-days", type=int, default=45)
     ap.add_argument("--max-calls", type=int, default=40, help="API calls allowed this run (quota guard)")
     ap.add_argument("--probe", action="store_true", help="fetch ONE record and report which fields mapped; writes nothing")
+    ap.add_argument("--query", help="with --probe: the search text to try (default: the first one in the query)")
     if any(a.lower().startswith(("--api-key", "--key", "--api_key")) for a in sys.argv[1:]):
         # refuse before argparse can echo the value back into a terminal or job log
         sys.exit("The API key cannot be passed as an argument. Set the SAM_API_KEY environment variable instead.")
@@ -284,11 +347,11 @@ def main():
     try:
         if args.probe:
             since = datetime.date.today() - datetime.timedelta(days=120)
-            status, data = http_get(build_url(key, since, 0, limit=1))
+            status, data = http_get(build_url(key, since, 0, limit=1, query=args.query))
             if status != 200 or not data or not data.get("awardSummary"):
                 sys.exit(f"Probe got status {status} and no record. (403 = bad key, 400 = bad parameter, 204 = nothing found.)")
             row = map_record(data["awardSummary"][0])
-            print(f"totalRecords reported: {data.get('totalRecords')}")
+            print(f"search text: {args.query or search_terms()[0]!r}   totalRecords reported: {data.get('totalRecords')}")
             for col in COLUMNS:
                 print(f"  {'ok   ' if str(row[col]).strip() else 'EMPTY'} {col}")
             return
