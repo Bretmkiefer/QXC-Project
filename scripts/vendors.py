@@ -235,6 +235,24 @@ def keep_row(vendor: dict, description: str, psc_code="", naics_code="") -> tupl
     return True, ""
 
 
+def tag_vendors(description: str, psc_code="", naics_code="") -> list:
+    """Vendor keys for a row that is already in the data, in VENDORS order.
+    Used by db/build_db.py to stamp each record for the app's vendor filter.
+
+    A vendor other than the first claims the row when its own rules would
+    have kept it. The first vendor (Cisco) claims the row when its name is in
+    the description, and also any row nobody else claims: the data began as
+    Cisco's unfiltered keyword results, some of which never spell the name
+    out. An order naming two vendors carries both."""
+    text = description or ""
+    first, others = VENDORS[0], VENDORS[1:]
+    tags = [v["key"] for v in others
+            if _TEXT[v["key"]].search(text) and keep_row(v, text, psc_code, naics_code)[0]]
+    if _TEXT[first["key"]].search(text) or not tags:
+        tags.insert(0, first["key"])
+    return tags
+
+
 # Real descriptions seen in the data, with the verdict each must get. Run this
 # file to check them after editing a rule.
 _SAMPLES = [
@@ -271,5 +289,17 @@ if __name__ == "__main__":
         ok = keep == expected
         failed += not ok
         print(f"{'ok  ' if ok else 'FAIL'} {key:10s} {'keep' if keep else 'drop'}  {desc[:70]}" + (f"   [{reason}]" if reason else ""))
-    print(f"\n{len(_SAMPLES) - failed} of {len(_SAMPLES)} samples as expected; query keywords: {', '.join(all_keywords())}")
+    for desc, psc, naics, expected in [
+        ("CISCO SMARTNET MAINTENANCE", "7A21", "541519", ["cisco"]),
+        ("TO INDUCT AIRCRAFT FOR DEPOT MAINTENANCE", "J015", "488190", ["cisco"]),  # unclaimed -> first vendor
+        ("PALO ALTO NETWORKS PA-3440 FIREWALL", "7G21", "541519", ["palo_alto"]),
+        ("CISCO 9500, PALO ALTO PA-3420, AND HW ACCESSORIES", "7G21", "541519", ["cisco", "palo_alto"]),
+        ("NETWORKING EQUIPMENT ARUBA, JUNIPER DELL", "7K20", "541519", ["juniper", "aruba"]),
+        ("CISCO PHONES FOR VA PALO ALTO HEALTH CARE SYSTEM", "7G21", "541519", ["cisco"]),  # the place, not the vendor
+    ]:
+        got = tag_vendors(desc, psc, naics)
+        ok = got == expected
+        failed += not ok
+        print(f"{'ok  ' if ok else 'FAIL'} tags {got}  {desc[:60]}")
+    print(f"\n{len(_SAMPLES) + 6 - failed} of {len(_SAMPLES) + 6} samples as expected; query keywords: {', '.join(all_keywords())}")
     raise SystemExit(1 if failed else 0)
