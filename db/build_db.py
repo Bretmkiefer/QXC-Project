@@ -17,11 +17,14 @@ matched_award_id_piid column added when the subaward's prime award is present
 in our own transactions dataset (expected to be uncommon).
 """
 import sqlite3
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+import vendors  # noqa: E402  (scripts/vendors.py: the vendor list and rules)
 TRANSACTIONS_CSV = ROOT / "data" / "raw" / "prime_transactions_checkpoint_1.csv"
 SUBAWARDS_CSV = ROOT / "data" / "raw" / "subawards_checkpoint_1.csv"
 DB_PATH = ROOT / "db" / "qxc.db"
@@ -65,6 +68,29 @@ def assign_award_keys(df: pd.DataFrame) -> pd.Series:
             for i, n in zip(idx, assigned):
                 keys[i] = p if n == 1 else f"{p}~{n}"
     return keys
+
+
+def _text(value) -> str:
+    """A cell as text: blank for a missing value, no ".0" on a numeric code."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _join_vendors(tag_lists) -> str:
+    """Union of several rows' vendor tags as "cisco|palo_alto", in the order
+    of scripts/vendors.py."""
+    seen = {t for tags in tag_lists for t in tags}
+    return "|".join(v["key"] for v in vendors.VENDORS if v["key"] in seen)
+
+
+def vendors_table() -> pd.DataFrame:
+    return pd.DataFrame(
+        [{"key": v["key"], "label": v["label"], "group_label": v["group"], "sort_order": i}
+         for i, v in enumerate(vendors.VENDORS)]
+    )
 
 
 def load_awards() -> pd.DataFrame:
@@ -121,6 +147,17 @@ def load_awards() -> pd.DataFrame:
     # award_piid keeps the real award id for display and exports.
     df["award_piid"] = df["award_id_piid"]
     df["award_id_piid"] = assign_award_keys(df)
+    # Which vendor(s) each transaction is about; an award carries the union
+    # across its transactions. Drives the app's vendor filter.
+    row_tags = [
+        vendors.tag_vendors(f"{_text(d)} {_text(b)}", _text(p), _text(n))
+        for d, b, p, n in zip(
+            df["transaction_description"], df["prime_award_base_transaction_description"],
+            df["product_or_service_code"], df["naics_code"])
+    ]
+    award_vendors = (
+        pd.Series(row_tags, index=df.index).groupby(df["award_id_piid"]).agg(_join_vendors).rename("vendors").reset_index()
+    )
     df = df.sort_values("action_date")
 
     grouped = df.groupby("award_id_piid", as_index=False)
@@ -152,6 +189,7 @@ def load_awards() -> pd.DataFrame:
         .merge(first_dates, on="award_id_piid")
         .merge(last_dates, on="award_id_piid")
         .merge(pop_start, on="award_id_piid")
+        .merge(award_vendors, on="award_id_piid")
     )
     awards["first_action_date"] = awards["first_action_date"].dt.strftime("%Y-%m-%d")
     awards["latest_action_date"] = awards["latest_action_date"].dt.strftime("%Y-%m-%d")
@@ -188,7 +226,14 @@ def load_subawards(awards: pd.DataFrame) -> pd.DataFrame:
         "subawardee_city_name",
         "subaward_description",
     ]
-    df = pd.read_csv(SUBAWARDS_CSV, usecols=cols, low_memory=False)
+    # The prime award's NAICS is only needed to tag the vendor; older files may lack it.
+    has_naics = "prime_award_naics_code" in pd.read_csv(SUBAWARDS_CSV, nrows=0).columns
+    df = pd.read_csv(SUBAWARDS_CSV, usecols=cols + (["prime_award_naics_code"] if has_naics else []), low_memory=False)
+    naics = df.pop("prime_award_naics_code") if has_naics else pd.Series([""] * len(df))
+    df["vendors"] = [
+        "|".join(vendors.tag_vendors(f"{_text(d)} {_text(b)}", "", _text(n)))
+        for d, b, n in zip(df["subaward_description"], df["prime_award_base_transaction_description"], naics)
+    ]
     df["subaward_amount"] = pd.to_numeric(df["subaward_amount"], errors="coerce").fillna(0.0)
     df["prime_award_amount"] = pd.to_numeric(df["prime_award_amount"], errors="coerce")
     df = df.rename(
@@ -252,6 +297,7 @@ def main():
     with sqlite3.connect(DB_PATH) as conn:
         awards.to_sql("awards", conn, if_exists="replace", index=False)
         subawards.to_sql("subawards", conn, if_exists="replace", index=False)
+        vendors_table().to_sql("vendors", conn, if_exists="replace", index=False)
 
         for col in ["awarding_office_code", "funding_office_code", "recipient_uei", "recipient_name"]:
             conn.execute(f"CREATE INDEX IF NOT EXISTS idx_awards_{col} ON awards({col})")

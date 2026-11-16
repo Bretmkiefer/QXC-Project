@@ -65,6 +65,12 @@ filtered, so its numbers match what was already presented.
 - **Tune a rule:** the fetch logs, per vendor, how many rows each rule dropped.
   If a count looks wrong, pull that vendor with `--raw-dir` (below), look at
   the unfiltered file, adjust the rule and the samples.
+- **The Vendor menu in the app** comes from the same file. The database
+  build stamps every award and subaward with the vendor(s) it is about
+  (`vendors.tag_vendors`, the same rules as the fetch), and the menu in the
+  top bar narrows every list, total and export to one vendor or to the HPE
+  group. A record no rule claims is Cisco's, because the data began as
+  Cisco's unfiltered results. An order naming two vendors shows under both.
 - HPE-branded spend is mostly servers and storage. Those rows are kept
   (`skip_compute_only` is off) on the view that extra rows beat missing ones;
   turning it on removes about 450 transactions.

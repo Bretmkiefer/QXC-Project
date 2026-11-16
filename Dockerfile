@@ -12,6 +12,8 @@ WORKDIR /build
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY db/build_db.py db/
+# the build stamps each record with its vendor, using the shared vendor list
+COPY scripts/vendors.py scripts/
 COPY data/raw/ data/raw/
 RUN test -f data/raw/prime_transactions_checkpoint_1.csv \
  && test -f data/raw/subawards_checkpoint_1.csv \
