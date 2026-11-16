@@ -9,9 +9,16 @@ See docs/data-refresh.md.
     # the monthly job: fetch from SAM.gov, check, update the bucket, start a rebuild
     SAM_API_KEY=... python scripts/refresh_data.py --fetch-sam --incoming /tmp/new --apply --trigger-deploy
 
-Where new files come from: either drop exports into --incoming (any mix of
-.csv/.xlsx) or add --fetch-sam to pull them from SAM.gov first. Everything
-after that (checking, de-duplicating, appending, uploading) is automatic.
+Where new files come from: drop exports into --incoming (any mix of
+.csv/.xlsx), add --fetch-sam to pull new awards from SAM.gov first, or name a
+command with --fetch-cmd that writes them there, for example every vendor's
+export:
+
+    python scripts/refresh_data.py --incoming /tmp/new \
+        --fetch-cmd "python scripts/fetch_vendor_exports.py --out /tmp/new"
+
+Which vendors are searched for is set in scripts/vendors.py. Everything after
+the fetch (checking, de-duplicating, appending, uploading) is automatic.
 
 Safety checks (always run, also in a dry run). The job STOPS with exit code 3
 and uploads nothing when:

@@ -39,6 +39,62 @@ new export file(s)  ->  scripts/refresh_data.py  ->  two CSVs in the cloud bucke
 
 `scripts/merge_new_records.py` does the same for one file, for ad-hoc use.
 
+## Vendors and the query
+
+`scripts/vendors.py` is the one place that says which vendors the data covers:
+Cisco, Palo Alto Networks, Juniper Networks, Aruba Networks, HPE, Arista
+Networks and Fortinet. Each entry lists the search keywords for that vendor
+(Fortinet is searched as both `fortinet` and `fortigate`) and the rules that
+separate its equipment from everything else the keyword matches. Both fetch
+scripts below search for every keyword in that file, so **the query is that
+list**.
+
+The rules exist because a keyword search is broad. Real examples the rules
+remove: about 290 rows for the VA Palo Alto hospital (janitorial, imaging,
+furniture), about 1,900 "juniper" rows for an unrelated company, a Coast Guard
+cutter and forestry work, and 966 orders of a surgical hemostat called Arista
+AH. Real examples they keep: network gear bought through military logistics
+contracts, which is coded as marine lifesaving equipment. Cisco is not
+filtered, so its numbers match what was already presented.
+
+- **Add a vendor:** append an entry to `VENDORS` in `scripts/vendors.py`, add a
+  few real descriptions to `_SAMPLES` there with the verdict each should get,
+  run `python scripts/vendors.py` (it must print every sample as `ok`), then
+  refresh. A first load of a new vendor is a deliberate spike, so pass
+  `--spike-floor` above the number of new rows the dry run reports.
+- **Tune a rule:** the fetch logs, per vendor, how many rows each rule dropped.
+  If a count looks wrong, pull that vendor with `--raw-dir` (below), look at
+  the unfiltered file, adjust the rule and the samples.
+- HPE-branded spend is mostly servers and storage. Those rows are kept
+  (`skip_compute_only` is off) on the view that extra rows beat missing ones;
+  turning it on removes about 450 transactions.
+
+## Refreshing every vendor (the working path today)
+
+`scripts/fetch_vendor_exports.py` is the automated form of the manual export
+the original two files came from. It downloads the whole period for every
+vendor keyword, filters each row by its vendor's rules and writes two CSVs for
+the steps above. It needs no API key, takes about ten minutes, and includes
+subawards. The export service's address is not stored in the repository: set
+`QXC_EXPORT_API` to it before running (whoever runs refreshes has it).
+
+```bash
+# dry run: fetch, then show what would be added (changes nothing)
+python scripts/refresh_data.py --incoming /tmp/incoming \
+    --fetch-cmd "python scripts/fetch_vendor_exports.py --out /tmp/incoming"
+
+# then the same with --apply, and run the Deploy workflow
+```
+
+`--vendors aruba juniper` limits it to some vendors; `--raw-dir DIR` also
+keeps each vendor's unfiltered download for inspection. Fetching the whole
+period every time is intended: rows already on file are dropped by the merge,
+and it is what picks up late-published records and subawards.
+
+History: on 2026-11-16 this path loaded the six vendors beyond Cisco and
+brought Cisco up to date. Prime transactions went from 6,628 to 10,724 rows
+and subawards from 799 to 1,332; the app went from 5,164 to 8,146 awards.
+
 ## Rules the tools enforce
 
 - **Existing rows are never changed, dropped or reordered; new rows are only
@@ -82,10 +138,17 @@ Awards API; `scripts/refresh_data.py --fetch-sam` then merges them with the
 steps above. Intended cadence: **about once a month**.
 
 What it does
-- Asks for awards (not IDVs) matching the search text (default `cisco`, set
-  with `QXC_SAM_QUERY`) signed on or after **the current data-through date
-  minus 45 days**. The overlap catches late-reported records; whatever is
-  already on file is dropped by the merge.
+- Asks for awards (not IDVs) matching the query, signed on or after **the
+  current data-through date minus 45 days**. The query is every vendor keyword
+  in `scripts/vendors.py`, one search each; results are filtered by the
+  vendor's rules and a record two searches both return is written once.
+  `QXC_SAM_QUERY` overrides the list with comma-separated search texts (for
+  example `QXC_SAM_QUERY=cisco` for the previous behavior). The overlap
+  catches late-reported records; whatever is already on file is dropped by the
+  merge.
+- This API returns no base award description, so the rules judge each row on
+  its transaction description alone. Expect it to keep slightly fewer rows
+  than the export path for the same period.
 - Maps the response to our column layout. The API has no subaward data, no
   company phone and no base award description; those stay blank, so
   subawards still need a manual file.
@@ -115,8 +178,15 @@ look at the new/already-present counts before enabling the schedule.
 
 Things to know
 - **Quota:** a personal key with no SAM.gov role gets only **10 calls a day**
-  (100 records each); with a role, 1,000. `--max-calls` (default 40) stops the
-  run before it can exhaust a quota; a monthly run normally needs a handful.
+  (100 records each); with a role, 1,000. The query is now nine searches and
+  each costs at least one call, so a run needs nine calls before any paging:
+  in practice **the full vendor list needs a key with a role**. `--max-calls`
+  (default 40) is one budget shared by all the searches and stops the run
+  before it can exhaust a quota. With only a personal key, use the export
+  path above, or set `QXC_SAM_QUERY` to fewer terms.
+- Whether the API's text search treats `palo alto` and `hewlett packard
+  enterprise` as phrases has not been checked against the live service. Try
+  one with `--probe --query "palo alto"` before trusting the counts.
 - **Recent DoD awards** are withheld by the API for 90 days, so they arrive
   on a later run; the overlap window covers this.
 - **Coverage may not match the existing files.** They were built by a
@@ -138,5 +208,11 @@ is an unvalidated example, not applied.
 The merge, refresh, safety checks and SAM.gov fetch are tested end to end on
 local copies of the current files with a simulated API (new rows, repeats,
 revisions, thin files, running twice, spike, future dates, bad key, quota cap,
-retries). Not yet run for real: the live SAM.gov API (use `--probe`), the
-upload to the bucket, and the deploy trigger.
+retries; and for the multi-vendor query: one search per keyword, vendor rules
+applied, a record returned by two searches written once, the `QXC_SAM_QUERY`
+override, and the shared call budget).
+
+Run for real on 2026-11-16: the export path (`fetch_vendor_exports.py`), the
+merge against the bucket, the upload, and a Deploy run started by hand. Not
+yet run for real: the live SAM.gov API (use `--probe`) and the automatic
+deploy trigger.
