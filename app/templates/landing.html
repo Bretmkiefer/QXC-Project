@@ -4,8 +4,8 @@
 <section class="hero">
   <div class="hero-inner">
     <div class="hero-eyebrow">Checkpoint 1 &middot; Local Proof of Concept</div>
-    <h1 class="hero-title">Network Equipment Intelligence</h1>
-    <p class="hero-sub">Federal direct-award and subaward data for Cisco, Palo Alto Networks, HPE (Juniper, Aruba), Arista and Fortinet networking equipment, rolled up by agency &mdash; with how much of it you've reviewed so far.</p>
+    <h1 class="hero-title">{{ vendor_title }} Equipment Intelligence</h1>
+    <p class="hero-sub">Federal direct-award and subaward data for {% if vendor_filter == 'all' %}{{ vendor_all_text }}{% else %}{{ vendor_title }}{% endif %} networking equipment, rolled up by agency &mdash; with how much of it you've reviewed so far.</p>
 
     {% if data_through %}<p class="hero-updated">Data through {{ data_through }}{% if data_built %} &middot; rebuilt {{ data_built }}{% endif %}</p>{% endif %}
     <form method="get" action="{{ url_for('records_view') }}" class="hero-search">

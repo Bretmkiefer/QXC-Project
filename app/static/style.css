@@ -958,3 +958,25 @@ details.inline-edit[open] summary { margin-bottom: 6px; }
   outline-offset: 1px;
 }
 .contact-form-actions { padding: 0 16px 14px; grid-column: 1 / -1; }
+
+/* Vendor menu in the top bar, and the vendor tag on records */
+.vendor-select { margin-left: 8px; }
+.vendor-select-current { cursor: default; white-space: nowrap; border: 1px solid var(--border); }
+.vendor-select-current strong { font-weight: 650; color: var(--text); }
+.vendor-select-current.is-filtered { background: var(--accent-soft); border-color: transparent; }
+.vendor-select-current.is-filtered strong { color: var(--accent); }
+.nav-dropdown-menu-right { left: auto; right: 0; min-width: 210px; }
+.nav-dropdown-menu a.indented { padding-left: 26px; }
+.badge-vendor { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+
+/* The vendor menu makes the top bar one item wider: keep it on one line and
+   shed the least important text first as the window narrows. */
+.topbar-brand { flex-shrink: 0; }
+.brand-name, .brand-sub, .topbar-link { white-space: nowrap; }
+@media (max-width: 1180px) {
+  .brand-sub, .vendor-select-prefix { display: none; }
+  .topbar-link { padding: 7px 9px; }
+}
+@media (max-width: 940px) {
+  .topbar-brand > div:not(.brand-mark) { display: none; }
+}

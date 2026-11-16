@@ -13,6 +13,7 @@
       <h1 class="record-detail-title">{{ r.title }}</h1>
       <div class="record-detail-meta">
         <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ r.type_label }}</span>
+        {% for v in r.vendor_labels %}<span class="badge badge-vendor">{{ v }}</span>{% endfor %}
         &nbsp;
         <a href="{{ url_for('awardees_view', key_token=r.company_url) }}">{{ r.company_name }}</a>
         {% if r.office_url_awarding %} &middot; <a href="{{ url_for('offices_view', role='awarding', code_token=r.office_url_awarding) }}">Awarding Office</a>{% endif %}
