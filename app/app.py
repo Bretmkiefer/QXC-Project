@@ -154,11 +154,11 @@ def coverage(direct_total: float, sub_total: float) -> dict:
         return {"label": "Direct Only", "cls": "accent"}
     if sub_total > 0:
         return {"label": "Subaward Only", "cls": "amber"}
-    return {"label": "No Cisco Spend", "cls": "muted"}
+    return {"label": "No Spend", "cls": "muted"}
 
 
 def visibility_tier(direct_total: float, sub_total: float) -> str:
-    """How much of this record's Cisco footprint comes through subaward
+    """How much of this record's equipment footprint comes through subaward
     data (the harder-to-get, more valuable dataset) vs. direct awards."""
     direct_total = direct_total or 0
     sub_total = sub_total or 0
