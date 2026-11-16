@@ -31,6 +31,16 @@
       <a class="topbar-link {% if active == 'awardees' %}active{% endif %}" href="{{ url_for('awardees_view') }}">Awardees</a>
       <a class="topbar-link {% if active == 'vehicles' %}active{% endif %}" href="{{ url_for('vehicles_view') }}">Vehicles</a>
       {% if auth_role == 'edit' %}<a class="topbar-link {% if active == 'review' %}active{% endif %}" href="{{ url_for('contacts_review_view') }}">Review</a>{% endif %}
+      {% if vendor_options|length > 2 %}
+      <div class="nav-dropdown vendor-select">
+        <span class="topbar-link vendor-select-current {% if vendor_filter != 'all' %}is-filtered{% endif %}" title="Every list, total and export is limited to this vendor"><span class="vendor-select-prefix">Vendor: </span><strong>{{ vendor_filter_label }}</strong> &#9662;</span>
+        <div class="nav-dropdown-menu nav-dropdown-menu-right">
+          {% for o in vendor_options %}
+          <a href="{{ url_for('set_vendor_filter', key=o.key) }}" class="{% if o.key == vendor_filter %}active{% endif %} {% if o.indent %}indented{% endif %}">{{ o.label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
     </nav>
   </header>
   <main class="workspace">

@@ -21,6 +21,7 @@ import re
 import secrets
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, url_for
@@ -70,6 +71,9 @@ def health():
         awards=int(len(AWARDS)),
         subawards=int(len(SUBAWARDS)),
         user_data_store="firestore" if USE_FIRESTORE else "sqlite",
+        awards_by_vendor={
+            v["key"]: int(AWARDS["vendors"].apply(lambda ks, k=v["key"]: k in ks.split("|")).sum()) for v in VENDORS
+        },
         data=BUILD_INFO,
     )
 
@@ -199,6 +203,19 @@ def load_data():
     with sqlite3.connect(DB_PATH) as conn:
         awards = pd.read_sql("SELECT * FROM awards", conn)
         subawards = pd.read_sql("SELECT * FROM subawards", conn)
+        try:
+            vendor_rows = pd.read_sql(
+                "SELECT key, label, group_label FROM vendors ORDER BY sort_order", conn
+            ).to_dict("records")
+        except Exception:  # database built before records carried a vendor
+            vendor_rows = [{"key": "cisco", "label": "Cisco", "group_label": "Cisco"}]
+
+    # "vendors" is a "|"-joined list of vendor keys (scripts/vendors.py) the
+    # record is about; an order naming two vendors carries both.
+    for df in (awards, subawards):
+        if "vendors" not in df.columns:
+            df["vendors"] = vendor_rows[0]["key"]
+        df["vendors"] = df["vendors"].fillna("").replace("", vendor_rows[0]["key"])
 
     for col in ["recipient_uei", "recipient_name", "recipient_cage_code",
                 "product_or_service_code", "product_or_service_code_description"]:
@@ -215,10 +232,15 @@ def load_data():
     subawards["entity_key"] = [
         entity_key(u, n) for u, n in zip(subawards["subawardee_uei"], subawards["subawardee_name"])
     ]
-    return awards, subawards
+    return awards, subawards, vendor_rows
 
 
-AWARDS, SUBAWARDS = load_data()
+AWARDS, SUBAWARDS, VENDORS = load_data()
+VENDOR_LABELS = {v["key"]: v["label"] for v in VENDORS}
+
+
+def vendor_labels_for(vendors_value) -> list:
+    return [VENDOR_LABELS.get(k, k) for k in str(vendors_value or "").split("|") if k]
 
 
 def strip_abbreviation(name):
@@ -1024,6 +1046,7 @@ def build_records() -> pd.DataFrame:
         "company_uei", "prime_uei", "psc_code", "psc_description", "cage_code",
         "awarding_office_name", "awarding_office_code", "awarding_agency_name", "awarding_sub_agency_name",
         "funding_office_name", "funding_office_code", "funding_agency_name", "funding_sub_agency_name",
+        "vendors",
     ]
 
     a = AWARDS.copy()
@@ -1071,6 +1094,8 @@ def build_records() -> pd.DataFrame:
     records["company_url"] = records["company_key"].apply(encode_key)
     records["models"] = records["description"].apply(extract_models)
     records["models_str"] = records["models"].apply(lambda m: ", ".join(m))
+    records["vendor_labels"] = records["vendors"].apply(vendor_labels_for)
+    records["vendor_str"] = records["vendor_labels"].apply(", ".join)
 
     # Purchase-type fields used by the filters and the CSV export.
     records["award_type"] = pd.concat(
@@ -1183,7 +1208,7 @@ def build_agency_rows(role: str, sort: str = "combined"):
     viewed = get_viewed_set()
 
     rows = []
-    for agency_name, g in RECORDS.groupby(agency_c, dropna=False):
+    for agency_name, g in cur_records().groupby(agency_c, dropna=False):
         direct_g = g[g["record_type"] == "award"]
         sub_g = g[g["record_type"] == "subaward"]
         direct_total = direct_g["amount"].sum()
@@ -1229,7 +1254,7 @@ def filter_records(role: str, agency: str = None, department: str = None, compan
     sub_agency_c = f"{role}_sub_agency_name"
     office_c = f"{role}_office_name"
 
-    df = RECORDS
+    df = cur_records()
     if agency:
         df = df[df[agency_c] == agency]
     if department:
@@ -1296,7 +1321,7 @@ def filter_records(role: str, agency: str = None, department: str = None, compan
 def department_options(role: str, agency: str = None):
     sub_agency_c = f"{role}_sub_agency_name"
     agency_c = f"{role}_agency_name"
-    df = RECORDS
+    df = cur_records()
     if agency:
         df = df[df[agency_c] == agency]
     vals = sorted(v for v in df[sub_agency_c].dropna().unique() if v)
@@ -1309,7 +1334,7 @@ def department_map(role: str) -> dict:
     have per-department rows in the DOM to derive this from."""
     agency_c = f"{role}_agency_name"
     sub_agency_c = f"{role}_sub_agency_name"
-    df = RECORDS[[agency_c, sub_agency_c]].dropna().drop_duplicates()
+    df = cur_records()[[agency_c, sub_agency_c]].dropna().drop_duplicates()
     out = {}
     for agency, group in df.groupby(agency_c):
         depts = sorted(v for v in group[sub_agency_c].unique() if v)
@@ -1324,7 +1349,7 @@ def build_department_detail(role: str, agency: str, department: str):
     office_code_c = f"{role}_office_code"
     office_name_c = f"{role}_office_name"
 
-    df = RECORDS[(RECORDS[agency_c] == agency) & (RECORDS[sub_agency_c] == department)]
+    df = cur_records()[(cur_records()[agency_c] == agency) & (cur_records()[sub_agency_c] == department)]
     if df.empty:
         return None
 
@@ -1471,6 +1496,7 @@ def build_record_detail(record_type: str, record_id: str):
             "office_url_awarding": encode_key(str(a["awarding_office_code"])),
             "office_url_funding": encode_key(str(a["funding_office_code"])),
             "groups": groups,
+            "vendor_labels": vendor_labels_for(a["vendors"]),
             "related": None,
         }
 
@@ -1553,6 +1579,7 @@ def build_record_detail(record_type: str, record_id: str):
             "office_url_awarding": encode_key(str(s["awarding_office_code"])),
             "office_url_funding": encode_key(str(s["funding_office_code"])),
             "groups": groups,
+            "vendor_labels": vendor_labels_for(s["vendors"]),
             "related": related,
         }
 
@@ -1623,8 +1650,140 @@ def build_contact_detail(contact_id):
 VEHICLE_ORDERS = RECORDS[(RECORDS["record_type"] == "award") & (RECORDS["parent_award_id"] != "")].copy()
 
 
+# ------------------------------------------------------- vendor filtering --
+# AWARDS / SUBAWARDS / RECORDS / VEHICLE_ORDERS hold every vendor. The Vendor
+# menu in the top bar narrows every list, rollup and export to one vendor (or
+# one umbrella group: HPE = Juniper + Aruba + HPE) by picking one of these
+# precomputed subsets per request. The choice lives in a cookie so it follows
+# the user from page to page without threading a parameter through every
+# link. Lookups of one specific record by id (record detail, contact links)
+# deliberately keep using the full frames, so a saved link always resolves
+# whatever the menu says.
+VENDOR_COOKIE = "qxc_vendor"
+
+
+def _build_vendor_filters():
+    """(options for the menu, {filter_key: set of vendor keys, or None for all})."""
+    options = [{"key": "all", "label": "All Vendors", "indent": False}]
+    keysets = {"all": None}
+    groups = {}
+    for v in VENDORS:
+        groups.setdefault(v["group_label"], []).append(v)
+    for group, members in groups.items():
+        if len(members) > 1:
+            group_key = f"group:{group}"
+            options.append({"key": group_key, "label": f"{group} (all)", "indent": False})
+            keysets[group_key] = {m["key"] for m in members}
+        for m in members:
+            options.append({"key": m["key"], "label": m["label"], "indent": len(members) > 1})
+            keysets[m["key"]] = {m["key"]}
+    return options, keysets
+
+
+VENDOR_FILTER_OPTIONS, _VENDOR_KEYSETS = _build_vendor_filters()
+
+
+def _vendor_all_text() -> str:
+    """"Cisco, Palo Alto Networks, HPE (Juniper, Aruba), Arista and Fortinet":
+    every vendor in the data, grouped, for page copy."""
+    groups = {}
+    for v in VENDORS:
+        groups.setdefault(v["group_label"], []).append(v["label"])
+    parts = []
+    for group, labels in groups.items():
+        others = [l.replace(" Networks", "") for l in labels if l != group]
+        name = group.replace(" Networks", "") if group != "Palo Alto Networks" else group
+        parts.append(f"{name} ({', '.join(others)})" if others else name)
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+VENDOR_ALL_TEXT = _vendor_all_text()
+
+
+def _vendor_subset(df: pd.DataFrame, keys: set) -> pd.DataFrame:
+    return df[df["vendors"].apply(lambda value: not keys.isdisjoint(value.split("|")))]
+
+
+_DATASETS = {"all": (AWARDS, SUBAWARDS, RECORDS, VEHICLE_ORDERS)}
+for _key, _keys in _VENDOR_KEYSETS.items():
+    if _keys is not None:
+        _DATASETS[_key] = tuple(_vendor_subset(_df, _keys) for _df in (AWARDS, SUBAWARDS, RECORDS, VEHICLE_ORDERS))
+
+
+def current_vendor_filter() -> str:
+    try:
+        return g.vendor_filter
+    except (AttributeError, RuntimeError):  # outside a request
+        return "all"
+
+
+def cur_awards() -> pd.DataFrame:
+    return _DATASETS[current_vendor_filter()][0]
+
+
+def cur_subawards() -> pd.DataFrame:
+    return _DATASETS[current_vendor_filter()][1]
+
+
+def cur_records() -> pd.DataFrame:
+    return _DATASETS[current_vendor_filter()][2]
+
+
+def cur_vehicle_orders() -> pd.DataFrame:
+    return _DATASETS[current_vendor_filter()][3]
+
+
+@app.before_request
+def select_vendor_filter():
+    key = request.cookies.get(VENDOR_COOKIE, "all")
+    g.vendor_filter = key if key in _DATASETS else "all"
+
+
+@app.context_processor
+def inject_vendor_filter():
+    key = current_vendor_filter()
+    label = next(o["label"] for o in VENDOR_FILTER_OPTIONS if o["key"] == key)
+    return {
+        "vendor_options": VENDOR_FILTER_OPTIONS,
+        "vendor_filter": key,
+        "vendor_filter_label": label,
+        # "Network Equipment Intelligence" / "Juniper Networks Equipment Intelligence"
+        "vendor_title": "Network" if key == "all" else label.replace(" (all)", ""),
+        "vendor_all_text": VENDOR_ALL_TEXT,
+    }
+
+
+def _vendor_redirect_target() -> str:
+    """Where to land after switching vendor: back on the list the user was
+    looking at. Detail pages go to their list instead, because the office,
+    company or vehicle on screen may have nothing under the new vendor."""
+    ref = urlparse(request.referrer or "")
+    if ref.netloc and ref.netloc != request.host:
+        return url_for("index")
+    path, query = ref.path or "/", (f"?{ref.query}" if ref.query else "")
+    if path in ("/", "/records", "/vehicles", "/contacts/review"):
+        return path + query
+    parts = path.strip("/").split("/")
+    if parts[0] == "offices" and len(parts) > 1 and parts[1] in ROLES:
+        return url_for("offices_view", role=parts[1])
+    if parts[0] == "awardees":
+        return url_for("awardees_view")
+    if parts[0] == "vehicles":
+        return url_for("vehicles_view")
+    return url_for("index")
+
+
+@app.route("/vendor/<key>")
+def set_vendor_filter(key):
+    if key not in _DATASETS:
+        abort(404)
+    resp = redirect(_vendor_redirect_target())
+    resp.set_cookie(VENDOR_COOKIE, key, max_age=180 * 24 * 3600, samesite="Lax", httponly=True)
+    return resp
+
+
 def build_vehicle_rows(q: str = None) -> list:
-    g = VEHICLE_ORDERS
+    g = cur_vehicle_orders()
     if g.empty:
         return []
     top = (
@@ -1653,7 +1812,7 @@ def build_vehicle_rows(q: str = None) -> list:
 
 
 def build_vehicle_detail(vehicle_id: str):
-    orders = VEHICLE_ORDERS[VEHICLE_ORDERS["parent_award_id"] == vehicle_id]
+    orders = cur_vehicle_orders()[cur_vehicle_orders()["parent_award_id"] == vehicle_id]
     if orders.empty:
         return None
     resellers = (
@@ -1670,7 +1829,7 @@ def build_vehicle_detail(vehicle_id: str):
         .reset_index().sort_values("total", ascending=False)
     )
     offices["url"] = offices["awarding_office_code"].astype(str).apply(encode_key)
-    subs = SUBAWARDS[SUBAWARDS["matched_award_id_piid"].isin(orders["record_id"])]
+    subs = cur_subawards()[cur_subawards()["matched_award_id_piid"].isin(orders["record_id"])]
     return {
         "id": vehicle_id,
         "orders": len(orders),
@@ -1687,7 +1846,7 @@ def build_vehicle_detail(vehicle_id: str):
 
 
 def vehicles_for_company(company_key: str) -> list:
-    o = VEHICLE_ORDERS[VEHICLE_ORDERS["company_key"] == company_key]
+    o = cur_vehicle_orders()[cur_vehicle_orders()["company_key"] == company_key]
     if o.empty:
         return []
     rows = (
@@ -1737,7 +1896,7 @@ def build_offices_rows(role: str):
     # would otherwise fragment one office into two rows if agency/name were
     # part of the join key.
     direct = (
-        AWARDS.groupby(code_c, dropna=False)
+        cur_awards().groupby(code_c, dropna=False)
         .agg(
             name=(name_c, "first"),
             agency=(agency_c, "first"),
@@ -1748,7 +1907,7 @@ def build_offices_rows(role: str):
         .rename(columns={code_c: "code"})
     )
     sub = (
-        SUBAWARDS.groupby(code_c, dropna=False)
+        cur_subawards().groupby(code_c, dropna=False)
         .agg(
             name=(name_c, "first"),
             agency=(agency_c, "first"),
@@ -1780,10 +1939,10 @@ def build_office_detail(role: str, code: str):
     cfg = ROLES[role]
     code_c, name_c, agency_c, sub_agency_c = cfg["code"], cfg["name"], cfg["agency"], cfg["sub_agency"]
 
-    office_awards = AWARDS[AWARDS[code_c].astype(str) == code].sort_values(
+    office_awards = cur_awards()[cur_awards()[code_c].astype(str) == code].sort_values(
         "total_federal_action_obligation", ascending=False
     )
-    office_subs_all = SUBAWARDS[SUBAWARDS[code_c].astype(str) == code]
+    office_subs_all = cur_subawards()[cur_subawards()[code_c].astype(str) == code]
 
     if office_awards.empty and office_subs_all.empty:
         return None
@@ -1897,7 +2056,7 @@ def index():
     jump_department = request.args.get("department") or None
 
     rows, totals = build_agency_rows(role, sort=sort)
-    agency_names = sorted(v for v in RECORDS[f"{role}_agency_name"].dropna().unique() if v)
+    agency_names = sorted(v for v in cur_records()[f"{role}_agency_name"].dropna().unique() if v)
 
     return render_template(
         "landing.html",
@@ -1985,7 +2144,7 @@ def records_view():
 
     viewed_in_results = sum(1 for r in records if r["is_viewed"])
 
-    agency_names = sorted(v for v in RECORDS[f"{role}_agency_name"].dropna().unique() if v)
+    agency_names = sorted(v for v in cur_records()[f"{role}_agency_name"].dropna().unique() if v)
 
     return render_template(
         "records.html",
@@ -2012,8 +2171,8 @@ def records_view():
         model_q=f["model_q"],
         category=f["category"],
         equipment=f["equipment"],
-        year_options=sorted(int(y) for y in RECORDS["year"].dropna().unique()),
-        award_type_options=sorted(v for v in RECORDS["award_type"].unique() if v),
+        year_options=sorted(int(y) for y in cur_records()["year"].dropna().unique()),
+        award_type_options=sorted(v for v in cur_records()["award_type"].unique() if v),
         category_options=CATEGORIES,
         equipment_options=EQUIPMENT_TYPES,
         export_args=active_filter_args(request.args),
@@ -2038,6 +2197,7 @@ EXPORT_COLUMNS = [
     ("Purchase Category", "category_str"),
     ("Equipment", "equipment_str"),
     ("Model Numbers", "models_str"),
+    ("Vendor", "vendor_str"),
     ("Description", "description"),
     ("Awarding Agency", "awarding_agency_name"),
     ("Awarding Sub-Agency", "awarding_sub_agency_name"),
@@ -2344,7 +2504,7 @@ def department_detail_view(role, agency_token, dept_token):
 
 def build_awardees_rows():
     direct = (
-        AWARDS.groupby("entity_key")
+        cur_awards().groupby("entity_key")
         .agg(
             direct_total=("total_federal_action_obligation", "sum"),
             direct_count=("award_id_piid", "nunique"),
@@ -2354,7 +2514,7 @@ def build_awardees_rows():
         .reset_index()
     )
     sub = (
-        SUBAWARDS.groupby("entity_key")
+        cur_subawards().groupby("entity_key")
         .agg(
             subaward_total=("subaward_amount", "sum"),
             subaward_count=("subaward_number", "count"),
@@ -2381,10 +2541,10 @@ def build_awardees_rows():
 
 
 def build_awardee_detail(key: str):
-    direct_awards = AWARDS[AWARDS["entity_key"] == key].sort_values(
+    direct_awards = cur_awards()[cur_awards()["entity_key"] == key].sort_values(
         "total_federal_action_obligation", ascending=False
     )
-    as_subawardee = SUBAWARDS[SUBAWARDS["entity_key"] == key].sort_values(
+    as_subawardee = cur_subawards()[cur_subawards()["entity_key"] == key].sort_values(
         "subaward_amount", ascending=False
     )
 

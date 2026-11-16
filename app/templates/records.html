@@ -128,6 +128,7 @@
        data-search="{{ ((r.description or '') ~ ' ' ~ (r.company_name or '') ~ ' ' ~ (r.prime_name or '') ~ ' ' ~ (r[role ~ '_office_name'] or '') ~ ' ' ~ (r[role ~ '_agency_name'] or ''))|lower }}">
     <div class="record-row-main">
       <span class="badge badge-{{ 'accent' if r.record_type == 'award' else 'amber' }}">{{ 'Direct Award' if r.record_type == 'award' else 'Subaward' }}</span>
+      {% for v in r.vendor_labels %}<span class="badge badge-vendor">{{ v }}</span>{% endfor %}
       <a class="record-row-id" href="{{ record_url(r.record_type, r.record_id) }}">{{ r.display_id }}</a>
       <a class="record-row-company" href="{{ url_for('awardees_view', key_token=r.company_url) }}" onclick="event.stopPropagation()">{{ r.company_name or "(unknown)" }}</a>
       {% if r.record_type == 'subaward' and r.prime_name %}<span class="record-row-prime">for {{ r.prime_name }}</span>{% endif %}
